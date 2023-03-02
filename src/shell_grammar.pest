@@ -261,7 +261,7 @@ command = {
 
 // Pipeline '|'
 
-pipeline = { command ~ ((!("||") ~ "|") ~ wsnl ~ command)* }
+pipeline = { command ~ ((!("||") ~ "|") ~ wsnl? ~ command)* }
 
 
 // And/Or List ('&&' or '||')
@@ -272,7 +272,7 @@ and_or_list_separator = { "&&" | "||" }
 
 // Compound List (";" or "&")
 
-compound_list = { compound_list_inner ~ (compound_list_separator ~ wsnl? ~ compound_list_inner)*}
+compound_list = { compound_list_inner ~ (compound_list_separator ~ wsnl? ~ compound_list)*}
 compound_list_separator = { (!(";;") ~ sequence_separator) | !("&&") ~ background | newline }
 sequence_separator = { ";" }
 background = { "&" }

@@ -1257,8 +1257,15 @@ mod lexer_tests {
     use crate::parser::ShellParser;
 
     #[test]
+    fn test_simple_script() {
+        let input = "ls -l\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+    #[test]
     fn test_simple_pipeline() {
-        let input = "ls -l | grep foo";
+        let input = "ls -l | grep foo\n";
         let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
 
         println!("{:?}", ast);
@@ -1271,6 +1278,30 @@ mod lexer_tests {
 mod parser_tests {
     use super::*;
     use crate::parser::PestShellParser;
+
+    #[test]
+    fn test_script() {
+        let input = "ls -l\n";
+        let pairs = PestShellParser::parse(Rule::script, input).unwrap_or_else(|e| panic!("{}", e));
+
+        for pair in pairs {
+            println!("Rule: {:?}", pair.as_rule());
+            println!("Span: {:?}", pair.as_span());
+            println!("Text: {:?}", pair.as_span().as_str());
+        }
+    }
+
+    #[test]
+    fn test_long_script() {
+        let input = "ls -l\nls -l | grep foo\nls -l | grep foo | wc -l\n";
+        let pairs = PestShellParser::parse(Rule::script, input).unwrap_or_else(|e| panic!("{}", e));
+
+        for pair in pairs {
+            println!("Rule: {:?}", pair.as_rule());
+            println!("Span: {:?}", pair.as_span());
+            println!("Text: {:?}", pair.as_span().as_str());
+        }
+    }
 
     #[test]
     fn test_pipeline() {
