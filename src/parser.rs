@@ -1,4 +1,6 @@
-
+use std::default::Default; 
+use std::fmt::Display;
+use std::fmt;
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::Pair;
@@ -14,40 +16,40 @@ struct PestShellParser;
 
 
 
-/*pub enum Command {
-    Pipeline {
-        argv: Vec<Word>,
-        redirect: Vec<Redirect>,
-    }
-}
-
-pub struct Word(String);
-
-pub enum RedirectType {
-    Pipe,
-
-}
-*/
-
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionType {
     Pipe,
-    File(String, RedirectionMode),
+    File(Word, RedirectionMode),
     None,
     Fd(i32),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionMode {
     Append,
     Output,
     Input,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Redirection {
     pub stdin: RedirectionType,
     pub stdout: RedirectionType,
     pub stderr: RedirectionType,
 }
 
+impl Default for Redirection {
+    fn default() -> Self {
+        Redirection {
+            stdin: RedirectionType::None,
+            stdout: RedirectionType::None,
+            stderr: RedirectionType::None,
+        }
+    }
+}
+
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RunIf {
     Always,
     // run if the previous command exited with status 0
@@ -56,28 +58,32 @@ pub enum RunIf {
     Failure,
 }
 
-
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CaseItem {
     pub patterns: Vec<Word>,
     pub body: Vec<Term>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ElIf {
     pub condition: Vec<Term>,
     pub then_part: Vec<Term>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Initializer {
     Array(Vec<Word>),
     String(Word),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Assignment {
     pub name: String,
     pub initializer: Initializer,
     pub index: Option<Expression>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LocalDeclaration {
     // local foo=1
     Assignment(Assignment),
@@ -85,6 +91,7 @@ pub enum LocalDeclaration {
     Name(String),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
@@ -143,6 +150,7 @@ pub enum Command {
     Conditional(Box<ConditionalExpression>),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ConditionalExpression {
     Or(Box<ConditionalExpression>, Box<ConditionalExpression>),
     And(Box<ConditionalExpression>, Box<ConditionalExpression>),
@@ -160,21 +168,25 @@ pub enum ConditionalExpression {
     Word(Word),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Pipeline {
     pub run_if: RunIf,
     pub commands: Vec<Command>, // Separated by |
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Term {
     pub code: String,
     pub pipelines: Vec<Pipeline>,
     pub background: bool,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Ast {
     pub terms: Vec<Term>, // separated by & or ;
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ExpansionOp {
     Length,                                 // ${#foo}
     GetOrEmpty,                             // $foo and ${foo}
@@ -183,18 +195,20 @@ pub enum ExpansionOp {
     GetOrDefaultAndAssign(Word),            // ${foo:=default}
     GetNullableOrDefaultAndAssign(Word),    // ${foo=default}
 
-    Substring {                             //${foo/pattern/replacement}
+    Substitute {                             //${foo/pattern/replacement}
         pattern: Word,
         replacement: Word,
         replace_all: bool,
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BinaryExpression {
     lhs: Box<Expression>,
     rhs: Box<Expression>,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expression {
     Add(BinaryExpression),
     Sub(BinaryExpression),
@@ -222,11 +236,13 @@ pub enum Expression {
     Expression(Box<Expression>),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum LiteralChar {
     Normal(char),
     Escape(char),
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Span {
     Literal(String),
     LiteralChar(Vec<LiteralChar>),
@@ -263,12 +279,22 @@ pub enum Span {
     },
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Word(pub Vec<Span>);
 
-
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseError {
     Fatal(String),
     Empty,
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseError::Fatal(msg) => write!(f, "Fatal error: {}", msg),
+            ParseError::Empty => write!(f, "Empty input"),
+        }
+    }
 }
 
 
@@ -297,6 +323,378 @@ impl ShellParser {
     pub fn new() -> ShellParser {
         ShellParser {}
     }
+
+
+    // proc_subst_direction = { "<" | ">" }
+    // proc_subst_span = !{ proc_subst_direction ~ "(" ~ compound_list ~ ")" }
+    fn process_substitution_span(&mut self, pair: Pair<Rule>) -> Span {
+        unimplemented!()
+    }
+
+
+    // command_span = !{ "$(" ~ compound_list ~ ")" }
+    fn command_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let body = self.compound_list(pair.into_inner().next().unwrap());
+        Span::Command { body, quoted }
+    }
+
+    // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ param_opt? ~ "}" }
+    fn parameter_expansion_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let mut inner = pair.into_inner();
+        let lenght_op = inner.next().unwrap().as_span().as_str().to_owned();
+        let name = inner.next().unwrap().as_span().as_str().to_owned();
+        let index = inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .map(|pair| self.expression(pair));
+
+        let op = if lenght_op == "#" {
+            ExpansionOp::Length
+        }
+        else if let Some(param_opt) = inner.next(){
+            let mut inner = param_opt.into_inner();
+            let symbol = inner.next().unwrap().as_span().as_str();
+            let rest = inner.next();
+            let default_word = rest
+                .clone()
+                .map(|pair| self.word(pair))
+                .unwrap_or_else(|| Word(vec![]));
+            match symbol {
+                "-" => ExpansionOp::GetNullableOrDefault(default_word),
+                ":-" => ExpansionOp::GetOrDefault(default_word),
+                "=" => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
+                ":=" => ExpansionOp::GetOrDefaultAndAssign(default_word),
+                "/" | "//" => {
+                    let spans = rest 
+                        .map(|pair| self.escaped_word(pair, true).0)
+                        .unwrap_or_else(|| vec![]);
+
+                    let mut pattern_spans = Vec::new();
+                    let mut replacement_spans = Vec::new();
+                    let mut spans_iter = spans.iter(); 
+                    let mut literal = String::new();
+                    let mut in_pattern = true;
+
+                    for span in spans_iter.by_ref() {
+                        match span {
+                            Span::LiteralChar(chars) => {
+                                for chr in chars {
+                                    match chr {
+                                        LiteralChar::Normal('/') if in_pattern => {
+                                            if !literal.is_empty() {
+                                                pattern_spans.push(Span::Literal(literal));
+                                            }
+
+                                            literal = String::new();
+                                            in_pattern = false;
+                                        },
+                                        LiteralChar::Normal(chr) => literal.push(*chr),
+                                        LiteralChar::Escape(chr) => literal.push(*chr),
+                                    }
+                                }
+
+                                if !literal.is_empty() {
+                                    if in_pattern {
+                                        pattern_spans.push(Span::Literal(literal));
+                                    }
+                                    else {
+                                        replacement_spans.push(Span::Literal(literal));
+                                    }
+
+                                    literal = String::new();
+                                }
+                            },
+                            _ => {
+                                pattern_spans.push(span.clone());
+                            }
+                        }
+                    }
+                    
+                    for span in spans_iter {
+                        replacement_spans.push(span.clone());
+                    }
+
+                    let pattern = Word(pattern_spans);
+                    let replacement = Word(replacement_spans);
+                    let replace_all = symbol == "//";
+                    ExpansionOp::Substitute{pattern, replacement, replace_all}
+                }
+                _ => unreachable!(),
+            }
+        }
+        else {
+            ExpansionOp::GetOrEmpty
+        };
+
+        if let Some(index) = index {
+            Span::ArrayParameter { name, index, quoted }
+        }
+        else {
+            Span::Parameter { name, op, quoted }
+        }
+    }
+
+
+    // param_span = { "$" ~ expandable_var_name }
+    fn parameter_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let name = pair
+            .into_inner()
+            .next()
+            .unwrap()
+            .as_span()
+            .as_str()
+            .to_owned();
+        let op = ExpansionOp::GetOrEmpty;
+        Span::Parameter { name, op, quoted }
+    }
+
+
+    // factor = { sign ~ primary ~ postfix_incdec }
+    // sign = { ("+" | "-")? }
+    // postfix_incdec = { ("++" | "--")? }
+    // primary = _{ num | ("$"? ~ var_name) |  ("(" ~ expr ~ ")") }
+    // num = { ASCII_DIGIT+ }
+    fn factor(&mut self, pair: Pair<Rule>) -> Expression {
+        assert_eq!(pair.as_rule(), Rule::factor);
+
+        let mut inner = pair.into_inner();
+        let sign = if inner.next().unwrap().as_span().as_str() == "-" {
+            -1
+        }
+        else {
+            1
+        };
+
+        let primary = inner.next().unwrap();
+        match primary.as_rule() {
+            Rule::number => {
+                let literal: i32 = primary.as_span().as_str().parse().unwrap();
+                Expression::Literal(literal * sign)
+            },
+            Rule::var_name => {
+                let name = primary.as_span().as_str().to_owned();
+                match inner.next() {
+                    Some(incdec) => match incdec.as_span().as_str() {
+                        "++" => Expression::Inc(name),
+                        "--" => Expression::Dec(name),
+                        "" => Expression::Parameter { name },
+                        _ => unreachable!(),
+                    },
+                    _ => Expression::Parameter { name },
+                }
+            }
+            Rule::expression => Expression::Expression(Box::new(self.expression(primary))),
+            _ => unreachable!(),
+        }
+    }
+
+
+
+    // term = { factor ~ (factor_op ~ expr)? }
+    // factor_op = { "*" | "/" }
+    fn term(&mut self, pair: Pair<Rule>) -> Expression {
+        assert_eq!(pair.as_rule(), Rule::term);
+
+        let mut inner = pair.into_inner();
+        let lhs = self.factor(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.term(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "*" => Expression::Mul(BinaryExpression { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                "/" => Expression::Div(BinaryExpression { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                "%" => Expression::Mod(BinaryExpression { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                _ => unreachable!(),
+            }
+        }
+        else {
+            lhs
+        }
+    }
+
+
+    // arith = { term ~ (arith_op ~ arith)? }
+    // arith_op = { "+" | "-" }
+    fn arithmetic_expression(&mut self, pair: Pair<Rule>) -> Expression {
+        assert_eq!(pair.as_rule(), Rule::arithmetic);
+
+        let mut inner = pair.into_inner();
+        let lhs = self.term(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.expression(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "+" => Expression::Add(BinaryExpression { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                "-" => Expression::Sub(BinaryExpression { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                _ => unreachable!(),
+            }
+        }
+        else {
+            lhs
+        }
+    }
+
+
+
+     // assign =
+    //        { var_name ~ assign_op ~ assign
+    //        | arith
+    //        }
+    // assign_op = { "=" }
+    fn assign_expression(&mut self, pair: Pair<Rule>) -> Expression {
+        let mut inner = pair.clone().into_inner();
+        let first = inner.next().unwrap();
+        match first.as_rule() {
+            Rule::var_name => {
+                let name = first.as_span().as_str().to_owned();
+                let op = inner.next().unwrap();
+                let rhs = self.expression(inner.next().unwrap());
+                match op.as_span().as_str() {
+                    "=" => Expression::Assign { name, rhs: Box::new(rhs) },
+                    _ => unreachable!(),
+                }
+            },
+            _ => match pair.as_rule() {
+                Rule::assign => self.arithmetic_expression(first),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+
+
+
+
+    // expr = !{ assign ~ (comp_op ~ expr)? }
+    // comp_op = { "==" | "!=" | ">" | ">=" | "<" | "<=" }
+    fn expression(&mut self, pair: Pair<Rule>) -> Expression {
+        let mut inner = pair.clone().into_inner();
+        let first = inner.next().unwrap();
+        let maybe_op = inner.next();
+
+        match pair.as_rule() {
+            Rule::assign => self.assign_expression(pair),
+            Rule::arithmetic => self.arithmetic_expression(pair),
+            Rule::term => self.term(pair),
+            Rule::factor => self.factor(pair),
+            Rule::expression => {
+                let lhs = self.assign_expression(first);
+                if let Some(op) = maybe_op {
+                    let rhs = self.expression(inner.next().unwrap());
+                    match op.as_span().as_str() {
+                        "==" => Expression::Eq(Box::new(lhs), Box::new(rhs)),
+                        "!=" => Expression::Ne(Box::new(lhs), Box::new(rhs)),
+                        ">" => Expression::Gt(Box::new(lhs), Box::new(rhs)),
+                        ">=" => Expression::Ge(Box::new(lhs), Box::new(rhs)),
+                        "<" => Expression::Lt(Box::new(lhs), Box::new(rhs)),
+                        "<=" => Expression::Le(Box::new(lhs), Box::new(rhs)),
+                        _ => unreachable!(),
+                    }
+                }
+                else {
+                    lhs
+                }
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    // expr_span = !{ "$((" ~ expr ~ "))" }
+    fn expression_span(&mut self, pair: Pair<Rule>) -> Span {
+        let expression = self.expression(pair.into_inner().next().unwrap());
+        Span::ArithmeticExpression { expression }
+    }
+
+    fn escape_sequences(&mut self, pair: Pair<Rule>, escaped_chars: Option<&str>) -> String {
+        let mut string = String::new();
+        let mut escaped = false;
+        for chr in pair.as_str().chars() {
+            if escaped {
+                escaped = false;
+                if let Some(escaped_chars) = escaped_chars {
+                    if !escaped_chars.contains(chr) {
+                        string.push('\\');
+                    }
+                }
+                string.push(chr);
+            }
+            else if chr == '\\' {
+                escaped = true;
+            }
+            else {
+                string.push(chr);
+            }
+        }
+
+        string
+    }
+
+    fn conditional_primary(&mut self, pair: Pair<Rule>) -> Box<ConditionalExpression> {
+        let mut inner = pair.into_inner();
+        let primary = inner.next().unwrap();
+        match primary.as_rule() {
+            Rule::word => {
+                let word = self.word(primary);
+                Box::new(ConditionalExpression::Word(word))
+            },
+            //Rule::conditional_expression => self.conditional_expression(primary),
+            _ => unreachable!(),
+        }
+    }
+
+
+
+    fn conditional_term(&mut self, pair: Pair<Rule>) -> Box<ConditionalExpression> {
+        let mut inner = pair.into_inner();
+        let lhs = self.conditional_primary(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.conditional_term(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "-eq" => Box::new(ConditionalExpression::Eq(lhs, rhs)),
+                "-ne" => Box::new(ConditionalExpression::Ne(lhs, rhs)),
+                "-lt" => Box::new(ConditionalExpression::Lt(lhs, rhs)),
+                "-le" => Box::new(ConditionalExpression::Le(lhs, rhs)),
+                "-gt" => Box::new(ConditionalExpression::Gt(lhs, rhs)),
+                "-ge" => Box::new(ConditionalExpression::Ge(lhs, rhs)),
+                "=" | "==" => Box::new(ConditionalExpression::StringEq(lhs, rhs)),
+                "!=" => Box::new(ConditionalExpression::StringNe(lhs, rhs)),
+                _ => unimplemented!(),
+            }
+        }
+        else {
+            lhs
+        }
+    }
+
+    fn conditional_and(&mut self, pair: Pair<Rule>) -> Box<ConditionalExpression> {
+        let mut inner = pair.into_inner();
+        let lhs = self.conditional_term(inner.next().unwrap());
+        if let Some(rhs) = inner.next() {
+            let rhs = self.conditional_and(rhs);
+            Box::new(ConditionalExpression::And(lhs, rhs))
+        }
+        else {
+            lhs
+        }
+    }
+
+    fn conditional_or(&mut self, pair: Pair<Rule>) -> Box<ConditionalExpression> {
+        let mut inner = pair.into_inner();
+        let lhs = self.conditional_and(inner.next().unwrap());
+        if let Some(rhs) = inner.next() {
+            let rhs = self.conditional_or(rhs);
+            Box::new(ConditionalExpression::Or(lhs, rhs))
+        }
+        else {
+            lhs
+        }
+    }
+
+     // cond_expr =  _{ cond_or }
+     fn conditional_expression(&mut self, pair: Pair<Rule>) -> Box<ConditionalExpression> {
+         self.conditional_or(pair)
+     }
+
 
     // word = ${ assign_like_prefix? ~ (tilde_span | span) ~ span* }
     // assign_like_prefix = { assign_like_prefix_var_name ~ "=" }
@@ -373,8 +771,23 @@ impl ShellParser {
                     }
                 }
                 Rule::expression_span => spans.push(self.expression_span(span)),
+                Rule::parameter_span => spans.push(self.parameter_span(span, false)),
+                Rule::parameter_expansion_span => spans.push(self.parameter_expansion_span(span, false)),
+                Rule::backtick_span => spans.push(self.command_span(span, false)),
+                Rule::command_span => spans.push(self.command_span(span, false)),
+                Rule::tilde_span => {
+                    let username = span
+                        .into_inner()
+                        .next()
+                        .map(|pair| pair.as_span().as_str().to_owned());
+                    spans.push(Span::Tilde(username));
+                },
+                Rule::wildcard_string_span => spans.push(Span::WildcardString {quoted: false}),
+                Rule::wildcard_char_span => spans.push(Span::WildcardChar {quoted: false}),
+                _ => unreachable!(),
             }
         }
+        Word(spans)
     }
 
 
@@ -465,7 +878,7 @@ impl ShellParser {
         assert_eq!(pair.as_rule(), Rule::simple_command);
 
         let mut argv = Vec::new();
-        let mut redirect: Redirection;
+        let mut redirect: Redirection = Redirection::default();
 
         let mut inner = pair.into_inner();
         let assignment_pairs = inner.next().unwrap().into_inner();
@@ -476,7 +889,7 @@ impl ShellParser {
         for word_or_redirect in args {
             match word_or_redirect.as_rule() {
                 Rule::word => argv.push(self.word(word_or_redirect)),
-                Rule::redirection => self.redirection(&mut redirect, word_or_redirect),
+                Rule::redirect => self.redirect(&mut redirect, word_or_redirect),
                 _ => unreachable!(),
             }
         }
@@ -622,9 +1035,9 @@ impl ShellParser {
         let update = self.expression(expression.next().unwrap());
 
         Command::ForArithmetic {
-            init: Box::new(init),
-            condition: Box::new(condition),
-            update: Box::new(update),
+            init: init,
+            condition: condition,
+            update: update,
             body,
         }
     }
@@ -716,9 +1129,8 @@ impl ShellParser {
             Rule::case_command => self.case_command(inner),
             Rule::while_command => self.while_command(inner),
             Rule::for_command => self.for_command(inner),
-            Rule::for_arithmetic_command => self.for_arithmetic_command(inner),
-            Rule::while_command => self.while_command(inner),
-            Rule::group => self.group(inner),
+            Rule::arithmetic_for_command => self.for_arithmetic_command(inner),
+            Rule::group => self.group_command(inner),
             Rule::subshell_group => self.subshell_group_command(inner),
             Rule::break_command => Command::Break,
             Rule::continue_command => Command::Continue,
@@ -726,7 +1138,7 @@ impl ShellParser {
             Rule::local_definition => self.local_definition(inner),
             Rule::function_definition => self.function_definition(inner),
             Rule::assignment_command => self.assignment_command(inner),
-            Rule::cond_ex => self.cond_ex(inner),
+            //Rule::conditional_expression => self.conditional_expression(inner),
             _ => unreachable!(),
         }
     }
@@ -839,9 +1251,24 @@ pub fn parse_input(script: &str) -> Result<Ast, ParseError> {
     parser.parse(script)
 }
 
+#[cfg(test)]
+mod lexer_tests {
+    use super::*;
+    use crate::parser::ShellParser;
+
+    #[test]
+    fn test_simple_pipeline() {
+        let input = "ls -l | grep foo";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+}
+
 
 #[cfg(test)]
-mod tests {
+mod parser_tests {
     use super::*;
     use crate::parser::PestShellParser;
 
