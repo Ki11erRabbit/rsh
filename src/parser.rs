@@ -8,7 +8,7 @@ struct ShellParser;
 
 
 
-pub enum Command {
+/*pub enum Command {
     Pipeline {
         argv: Vec<Word>,
         redirect: Vec<Redirect>,
@@ -18,6 +18,7 @@ pub enum Command {
 pub struct Word(String);
 
 pub enum RedirectType {
+    Pipe,
 
 }
-
+*/
