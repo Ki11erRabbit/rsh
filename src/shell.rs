@@ -17,4 +17,10 @@ pub struct Shell {
     tty_fd: i32,
     job_table: Vec<Job>,
     current_job: Option<Job>,
+    //output
+    output: Output,
+    errout: Output,
+    //misc
+    root_pid: Pid,
+    path: String,
 }

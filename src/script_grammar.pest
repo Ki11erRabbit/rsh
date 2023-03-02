@@ -1,0 +1,136 @@
+
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" }
+
+COMMENT = _{"#" ~(!("\n") ~ ANY)*}
+
+var_char = _{ "_" | ASCII_ALPHANUMERIC }
+
+word = _{ ASCII+ }
+
+var_name = ${ var_char+ }
+
+number = ${ ASCII_DIGIT+ }
+
+//operators
+
+assign_op = { "=" }
+
+equal_op = { (WHITESPACE ~ "=" ~ WHITESPACE) | (WHITESPACE ~ "==" ~ WHITESPACE) | (WHITESPACE ~ "-eq" ~ WHITESPACE) }
+not_equal_op = { WHITESPACE ~ "!=" ~ WHITESPACE | WHITESPACE ~ "-ne" ~ WHITESPACE }
+less_op = { (WHITESPACE ~ "<" ~ WHITESPACE) | (WHITESPACE ~ "-lt" ~ WHITESPACE) }
+greater_op = { (WHITESPACE ~ ">" ~ WHITESPACE) | (WHITESPACE ~ "-gt" ~ WHITESPACE) }
+less_equal_op = { (WHITESPACE ~ "<=" ~ WHITESPACE) | (WHITESPACE ~ "-le" ~ WHITESPACE) }
+greater_equal_op = { (WHITESPACE ~ ">=" ~ WHITESPACE) | (WHITESPACE ~ "-ge" ~ WHITESPACE) }
+
+conditonal_op = { equal_op | not_equal_op | less_op | greater_op | less_equal_op | greater_equal_op }
+
+add_op = { "+" }
+sub_op = { "-" }
+mul_op = { "*" }
+div_op = { "/" }
+mod_op = { "%" }
+
+math_op = { add_op | sub_op | mul_op | div_op | mod_op }
+
+plus_equal_op = { "+="}
+minus_equal_op = { "-=" }
+mul_equal_op = { "*=" }
+div_equal_op = { "/=" }
+mod_equal_op = { "%=" }
+
+pipe_op = { "|" }
+bang_op = { "!" }
+ampersand = _{ "&" }
+
+separator_op = { semicolon | ampersand }
+
+bit_left_op = { "<<" }
+bit_right_op = { ">>" }
+bit_left_equal_op = { "<<=" }
+bit_right_equal_op = { ">>=" }
+bit_and_op = { ampersand }
+bit_or_op = { pipe_op }
+bit_xor_op = { "^" }
+bit_not_op = { "~" }
+bit_and_equal_op = { "&=" }
+bit_or_equal_op = { "|=" }
+bit_xor_equal_op = { "^=" }
+
+logical_and_op = { "&&" }
+logical_or_op = { pipe_op ~ pipe_op }
+logical_not_op = { bang_op }
+
+comma = { "," }
+
+left_brace = {"{"}
+right_brace = {"}"}
+left_paren = {"("}
+right_paren = {")"}
+
+semicolon = {";"}
+double_semicolon = { semicolon ~ ampersand }
+
+
+// reserved words
+
+if = _{"if"}
+then = _{"then"}
+else = _{"else"}
+elif = _{"elif"}
+fi = _{"fi"}
+do = _{"do"}
+done = _{"done"}
+
+case = _{"case"}
+esac = _{"esac"}
+while = _{"while"}
+until = _{"until"}
+for = _{"for"}
+
+in = _{"in"}
+
+reserved_words = { if | then | else | elif | fi | do | done | case | esac | while | until | for | in }
+
+newline_list = ${ NEWLINE | (NEWLINE ~ newline_list) }
+linebreak = ${ newline_list }
+
+//pipelines
+
+cmd_name = ${ word }
+cmd_args = ${ word* }
+cmd = ${ cmd_name | (cmd_name ~ cmd_args) }
+
+redirection_op = ${ ">" | "<" | ">>" }
+
+redirection = ${ redirection_op ~ word }
+redirection_list = ${ redirection | (redirection ~ redirection_list) }
+
+pipeline = ${ cmd | (cmd ~ redirection_list) | (cmd ~ redirection_list ~ pipe_op ~ pipeline) | (cmd ~ pipe_op ~ pipeline) }
+
+
+
+//cmd_name = ${ word }
+
+//cmd_prefix = ${ (io_redirect) | (cmd_prefix ~ io_redirect) | (assignment) | (cmd_prefix ~ assignment) }
+//cmd_suffix = ${ (io_redirect) | (cmd_suffix ~ io_redirect) | (word) | (cmd_suffix ~ word)}
+
+//simple_command = ${ (cmd_prefix ~ cmd_name ~cmd_sufix) | (cmd_prefix ~ cmd_name) | (cmd_prefix)  | (cmd_name ~ cmd_sufix) | (cmd_name) }
+//compound_command = ${ brace_group | subshell | for_clause | case_clause | if_clause | while_clause | until_clause }
+
+//command = ${ simple_command | compound_command | (compound_command ~ redirect_list) | function_definition }
+
+//pipe_sequence = ${ command | (command ~ pipe_op ~ linebreak ~ command) }
+//pipeline = ${ pipe_sequence | (logical_not_op ~ pipe_sequence) }
+
+//and_or = ${ pipeline | (and_or ~ and_if ~ linebreak ~ pipeline) | (and_or ~ or_if ~ linebreak ~ pipeline) }
+//separator = ${ newline_list | (separator_op ~ linebreak) }
+//term = ${ (term ~ and_or) | (and_or) }
+
+//compound_list = ${ (linebreak ~ term) | (linebreak ~ term ~ separator) }
+
+//subshell = ${ left_paren ~ compound_list ~ right_paren }
+
+//if_command = { if ~ compound_list ~ then ~ compound_list ~ elif_part* ~ else_part? ~ fi }
+//elif_part = { elif ~ compound_list ~ then ~ compound_list }
+//else_part = { else ~ compound_list }
