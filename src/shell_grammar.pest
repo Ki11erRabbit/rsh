@@ -23,15 +23,15 @@ assign_like_prefix_var_name = ${ assign_like_prefix_chars+ }
 
 username = ${ (!("/") ~ word_char)+ }
 //whitespace newline
-wsnl = _{ WHITESPACE | COMMENT | newline)+}
+wsnl = _{ (WHITESPACE | COMMENT | newline)+}
 
 
 special_var_name = _{ "?" | "$" | "!" | "-" | "#" | "@" | "*" | ASCII_DIGIT }
 
 
-var_name = ${ var_char+ }
+var_name = ${ var_name_char+ }
 
-index = { ("[" ~ expr ~ "]")? }
+index = { ("[" ~ expression ~ "]")? }
 
 number = ${ ASCII_DIGIT+ }
 
@@ -88,7 +88,7 @@ length_op = { "#"? }
 parameter_op = { ":=" | ":-" | "-" | "//" | "/" }
 parameter_option = { parameter_op ~ word? }
 parameter_expansion_span = { "$" ~ "{" ~ length_op ~expandable_var_name ~ index ~ parameter_option? ~ "}" }
-parammeter_span = { "$" ~ expandable_var_name }
+parameter_span = { "$" ~ expandable_var_name }
 
 double_quoted_span = { "\"" ~ double_quoted_span_inner* ~ "\"" }
 double_quoted_span_inner = _{
@@ -106,9 +106,10 @@ single_quoted_span_inner = _{
 }
 
 literal_in_double_quoted_span = ${
-    !("\"" | "\\" | "`" | "$") ~ ANY
-    | "\\" ~ ANY
-    | WHITESPACE
+    (
+        !("\"" | "\\" | "`" | "$") ~ ANY
+        | "\\" ~ ANY
+        | WHITESPACE
     )+
 }
 
@@ -121,7 +122,7 @@ initializer = { array_initializer | string_initializer }
 string_initializer = { word }
 array_initializer = { ("(" ~ word* ~ ")") }
 
-assignment = { var_name ~ "=" ~ initializer ~ WHITESPACE? } }
+assignment = { var_name ~ "=" ~ initializer ~ WHITESPACE? } 
 assignment_command = { assignment+}
 
 
@@ -157,7 +158,7 @@ reserved_word = ${
 
 argv0 = { !reserved_word ~ word }
 args = { word_or_redirect* }
-assignment = { assigment* }
+assignments = { assignment* }
 simple_command = { assignments ~ argv0 ~ args }
 
 
@@ -182,14 +183,14 @@ while_command = { "while" ~ compound_list ~ "do" ~ compound_list ~ "done" }
 
 // For Command
 
-word_list { (!reserved_word ~ word)* }
+word_list = { (!reserved_word ~ word)* }
 
 for_command = {
     "for" ~ var_name ~ "in" ~ word_list ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
 }
 
 
-arithmetic_for_expression = { "((" ~ expression ~ ";" ~ expression ~ ";" ~ expression "))" }
+arithmetic_for_expression = { "((" ~ expression ~ ";" ~ expression ~ ";" ~ expression ~ "))" }
 arithmetic_for_command = {
     "for" ~ arithmetic_for_expression ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
 }
@@ -260,7 +261,7 @@ command = {
 
 // Pipeline '|'
 
-pipeline = { command ~ ((!("||") ~ "|") ~ wsnl) ~ command)* }
+pipeline = { command ~ ((!("||") ~ "|") ~ wsnl ~ command)* }
 
 
 // And/Or List ('&&' or '||')
@@ -272,7 +273,7 @@ and_or_list_separator = { "&&" | "||" }
 // Compound List (";" or "&")
 
 compound_list = { compound_list_inner ~ (compound_list_separator ~ wsnl? ~ compound_list_inner)*}
-compound_list_inner = { (!(";;") ~ sequence_separator) | !("&&") ~ background | newline }
+compound_list_separator = { (!(";;") ~ sequence_separator) | !("&&") ~ background | newline }
 sequence_separator = { ";" }
 background = { "&" }
 empty_line = {""}
