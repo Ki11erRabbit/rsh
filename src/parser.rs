@@ -571,6 +571,10 @@ impl ShellParser {
         let mut inner = pair.clone().into_inner();
         let first = inner.next().unwrap();
         let maybe_op = inner.next();
+            
+        
+        println!("\nexpression: {:?}\n", pair);
+        println!("\nrule: {:?}\n", pair.as_rule());
 
         match pair.as_rule() {
             Rule::assign => self.assign_expression(pair),
@@ -1192,6 +1196,8 @@ impl ShellParser {
             let mut background = false;
             let mut rest = None;
             while let Some(sep_or_rest) = wsnl!(self, inner) {
+                println!("\n\nsep_or_rest: {:?}\n\n", sep_or_rest);
+                println!("\n\nsep_or_rest.as_rule(): {:?}\n\n", sep_or_rest.as_rule());
                 match sep_or_rest.as_rule() {
                     Rule::compound_list => {
                         rest = Some(sep_or_rest);
@@ -1231,8 +1237,9 @@ impl ShellParser {
     pub fn parse(&mut self, script: &str) -> Result<Ast, ParseError> {
         match PestShellParser::parse(Rule::script, script) {
             Ok(mut pairs) => {
+                println!("\npairs:\n{:?}\n\n", pairs);
                 let terms = self.compound_list(pairs.next().unwrap());
-
+                println!("\nterms:\n{:?}\n\n", terms); 
                 if terms.is_empty() {
                     Err(ParseError::Empty)
                 } else {
@@ -1266,6 +1273,134 @@ mod lexer_tests {
     #[test]
     fn test_simple_pipeline() {
         let input = "ls -l | grep foo\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_env_pipeline() {
+        let input = "FOO=bar ls -l | grep foo\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_simple_script_with_comment() {
+        let input = "ls -l # this is a comment\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_for_loop() {
+        let input = "for i in 1 2 3; do echo $i; done\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_while_loop() {
+        let input = "while true; do echo $i; done\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_if() {
+        let input = "if true; then echo $i; fi\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_if_else() {
+        let input = "if true; then echo $i; else echo $j; fi\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_if_elif_else() {
+        let input = "if true; then echo $i; elif false; then echo $j; else echo $k; fi\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_case() {
+        let input = "case $i in 1) echo $i;; 2) echo $j;; *) echo $k;; esac\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_case_with_pipes() {
+        let input = "case $i in 1) echo $i | grep foo;; 2) echo $j | grep bar;; *) echo $k | grep baz;; esac\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_case_with_pipes_and_background() {
+        let input = "case $i in 1) echo $i | grep foo &;; 2) echo $j | grep bar &;; *) echo $k | grep baz &;; esac\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_case_with_pipes_and_background_and_semicolon() {
+        let input = "case $i in 1) echo $i | grep foo &;; 2) echo $j | grep bar &;; *) echo $k | grep baz &;; esac\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_background() {
+        let input = "ls -l &\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_background_with_pipes() {
+        let input = "ls -l | grep foo &\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_semicolon() {
+        let input = "ls -l; echo $i\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_multiple_lines() {
+        let input = "ls -l\nls -l | grep foo\nls -l | grep foo | wc -l\n";
+        let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
+
+        println!("{:?}", ast);
+    }
+
+    #[test]
+    fn test_environment_variable_lexer() {
+        let input = "FOO=bar\n";
         let ast = parse_input(input).unwrap_or_else(|e| panic!("{}", e));
 
         println!("{:?}", ast);
@@ -1448,6 +1583,30 @@ mod parser_tests {
     echo $i;
 done";
         let pairs = PestShellParser::parse(Rule::pipeline, input).unwrap_or_else(|e| panic!("{}", e));
+
+        for pair in pairs {
+            println!("Rule: {:?}", pair.as_rule());
+            println!("Span: {:?}", pair.as_span());
+            println!("Text: {:?}", pair.as_span().as_str());
+        }
+    }
+
+    #[test]
+    fn test_env_pipeline() {
+        let input = "FOO=bar ls -l | grep foo > foo.txt";
+        let pairs = PestShellParser::parse(Rule::pipeline, input).unwrap_or_else(|e| panic!("{}", e));
+
+        for pair in pairs {
+            println!("Rule: {:?}", pair.as_rule());
+            println!("Span: {:?}", pair.as_span());
+            println!("Text: {:?}", pair.as_span().as_str());
+        }
+    }
+
+    #[test]
+    fn test_environment_variable() {
+        let input = "FOO=bar";
+        let pairs = PestShellParser::parse(Rule::script, input).unwrap_or_else(|e| panic!("{}", e));
 
         for pair in pairs {
             println!("Rule: {:?}", pair.as_rule());
