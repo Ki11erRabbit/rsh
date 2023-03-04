@@ -1,8 +1,13 @@
 //mod shell;
 mod parser;
+mod eval;
+mod exec;
+mod process;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+
+use std::io::{self, Write};
 
 
 use std::thread::sleep;
@@ -22,7 +27,7 @@ static mut NAME: i32 = 42;
 
 fn main() {
 
-    unsafe {
+    /*unsafe {
         signal_hook::low_level::register(2, sig_int_handler).unwrap();
     }
 
@@ -31,5 +36,18 @@ fn main() {
         println!("Looping");
         sleep(std::time::Duration::from_secs(1));
     }
-    println!("Hello, world!");
+    println!("Hello, world!");*/
+
+
+    loop {
+        print!("$ ");
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+
+        let ast = parser::parse_input(&input).unwrap();
+
+        let result = eval::eval(&ast, 0, 1, 2);
+    }
 }

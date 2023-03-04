@@ -1,9 +1,10 @@
-use std::default::Default; 
+use std::string::ToString; 
 use std::fmt::Display;
 use std::fmt;
 use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::Pair;
+
 
 #[derive(Parser)]
 #[grammar = "shell_grammar.pest"] // relative to project `src`
@@ -11,42 +12,29 @@ struct PestShellParser;
 
 
 
-
-
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum RedirectionDirection {
+    Input,
+    Output,
+    Append,
+}
 
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionType {
-    Pipe,
-    File(Word, RedirectionMode),
-    None,
+    File(Word),
     Fd(i32),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum RedirectionMode {
-    Append,
-    Output,
-    Input,
-}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Redirection {
-    pub stdin: RedirectionType,
-    pub stdout: RedirectionType,
-    pub stderr: RedirectionType,
+    pub fd: i32,
+    pub direction: RedirectionDirection,
+    pub target: RedirectionType,
 }
 
-impl Default for Redirection {
-    fn default() -> Self {
-        Redirection {
-            stdin: RedirectionType::None,
-            stdout: RedirectionType::None,
-            stderr: RedirectionType::None,
-        }
-    }
-}
 
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -95,7 +83,7 @@ pub enum LocalDeclaration {
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
-        redirect: Redirection,
+        redirects: Vec<Redirection>,
         // Assingment Prefixes (e.g. FOO=bar ./foo)
         assignments: Vec<Assignment>,
     },
@@ -108,7 +96,7 @@ pub enum Command {
         then_part: Vec<Term>,
         elif_parts: Vec<ElIf>,
         else_part: Option<Vec<Term>>,
-        redirects: Redirection,
+        redirects: Vec<Redirection>,
     },
     While {
         condition: Vec<Term>,
@@ -279,8 +267,31 @@ pub enum Span {
     },
 }
 
+impl ToString for Span {
+    fn to_string(&self) -> String {
+        let output;
+        match self {
+            Span::Literal(string) => output = string.clone(),
+            _ => output = "unimplemented".to_string(),
+        }
+
+        output
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Word(pub Vec<Span>);
+
+impl ToString for Word {
+    fn to_string(&self) -> String {
+        let mut output = String::new();
+        for span in self.0.iter() {
+            output = output + span.to_string().as_str();
+        }
+
+        output
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ParseError {
@@ -573,8 +584,8 @@ impl ShellParser {
         let maybe_op = inner.next();
             
         
-        println!("\nexpression: {:?}\n", pair);
-        println!("\nrule: {:?}\n", pair.as_rule());
+        //println!("\nexpression: {:?}\n", pair);
+        //println!("\nrule: {:?}\n", pair.as_rule());
 
         match pair.as_rule() {
             Rule::assign => self.assign_expression(pair),
@@ -799,22 +810,22 @@ impl ShellParser {
     // redirect_direction = { "<" | ">" | ">>" }
     // redirect_to_fd = ${ "&" ~ ASCII_DIGIT* }
     // redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
-    fn redirect(&mut self, redirect: &mut Redirection, pair: Pair<Rule>) {
+    fn redirect(&mut self, pair: Pair<Rule>) -> Redirection {
         let mut inner = pair.into_inner();
         let fd = inner.next().unwrap();
         let symbol = inner.next().unwrap();
         let target = inner.next().unwrap();
 
         let (direction, default_fd) = match symbol.as_span().as_str() {
-            "<" => (RedirectionMode::Input, 0),
-            ">" => (RedirectionMode::Output, 1),
-            ">>" => (RedirectionMode::Append, 1),
+            "<" => (RedirectionDirection::Input, 0),
+            ">" => (RedirectionDirection::Output, 1),
+            ">>" => (RedirectionDirection::Append, 1),
             _ => unreachable!(),
         };
 
         let fd = fd.as_span().as_str().parse::<i32>().unwrap_or(default_fd);
         let target = match target.as_rule() {
-            Rule::word => RedirectionType::File(self.word(target), direction),
+            Rule::word => RedirectionType::File(self.word(target)),
             Rule::redirect_to_file_descriptor => {
                 let target_fd = target
                     .into_inner()
@@ -829,13 +840,7 @@ impl ShellParser {
             _ => unreachable!(),
         };
         
-        match fd {
-            0 => redirect.stdin = target,
-            1 => redirect.stdout = target,
-            2 => redirect.stderr = target,
-            _ => unreachable!(),
-        }
-
+        Redirection { fd, direction, target }
     }
 
     fn word(&mut self, pair: Pair<Rule>) -> Word {
@@ -882,7 +887,7 @@ impl ShellParser {
         assert_eq!(pair.as_rule(), Rule::simple_command);
 
         let mut argv = Vec::new();
-        let mut redirect: Redirection = Redirection::default();
+        let mut redirects: Vec<Redirection> = Vec::new();
 
         let mut inner = pair.into_inner();
         let assignment_pairs = inner.next().unwrap().into_inner();
@@ -893,7 +898,7 @@ impl ShellParser {
         for word_or_redirect in args {
             match word_or_redirect.as_rule() {
                 Rule::word => argv.push(self.word(word_or_redirect)),
-                Rule::redirect => self.redirect(&mut redirect, word_or_redirect),
+                Rule::redirect => redirects.push(self.redirect(word_or_redirect)),
                 _ => unreachable!(),
             }
         }
@@ -904,7 +909,7 @@ impl ShellParser {
 
         Command::SimpleCommand {
             argv,
-            redirect,
+            redirects,
             assignments,
         }
     }
@@ -947,11 +952,7 @@ impl ShellParser {
             then_part,
             elif_parts,
             else_part,
-            redirects: Redirection { //TODO
-                stdin: RedirectionType::None,
-                stdout: RedirectionType::None,
-                stderr: RedirectionType::None,
-            },
+            redirects: Vec::new(),
         }
     }
 
@@ -1196,8 +1197,8 @@ impl ShellParser {
             let mut background = false;
             let mut rest = None;
             while let Some(sep_or_rest) = wsnl!(self, inner) {
-                println!("\n\nsep_or_rest: {:?}\n\n", sep_or_rest);
-                println!("\n\nsep_or_rest.as_rule(): {:?}\n\n", sep_or_rest.as_rule());
+                //println!("\n\nsep_or_rest: {:?}\n\n", sep_or_rest);
+                //println!("\n\nsep_or_rest.as_rule(): {:?}\n\n", sep_or_rest.as_rule());
                 match sep_or_rest.as_rule() {
                     Rule::compound_list => {
                         rest = Some(sep_or_rest);
@@ -1237,9 +1238,9 @@ impl ShellParser {
     pub fn parse(&mut self, script: &str) -> Result<Ast, ParseError> {
         match PestShellParser::parse(Rule::script, script) {
             Ok(mut pairs) => {
-                println!("\npairs:\n{:?}\n\n", pairs);
+                //println!("\npairs:\n{:?}\n\n", pairs);
                 let terms = self.compound_list(pairs.next().unwrap());
-                println!("\nterms:\n{:?}\n\n", terms); 
+                //println!("\nterms:\n{:?}\n\n", terms); 
                 if terms.is_empty() {
                     Err(ParseError::Empty)
                 } else {
@@ -1609,6 +1610,19 @@ done";
         let pairs = PestShellParser::parse(Rule::script, input).unwrap_or_else(|e| panic!("{}", e));
 
         for pair in pairs {
+            println!("Rule: {:?}", pair.as_rule());
+            println!("Span: {:?}", pair.as_span());
+            println!("Text: {:?}", pair.as_span().as_str());
+        }
+    }
+
+    #[test]
+    fn test_redirection_with_pipe() {
+        let input = "ls -l 2>&1 | grep foo 2> foo.txt";
+        let pairs = PestShellParser::parse(Rule::script, input).unwrap_or_else(|e| panic!("{}", e));
+
+        for pair in pairs {
+            //println!("Pair: {:?}", pair);
             println!("Rule: {:?}", pair.as_rule());
             println!("Span: {:?}", pair.as_span());
             println!("Text: {:?}", pair.as_span().as_str());
