@@ -1,0 +1,208 @@
+
+WHITESPACE = _ { " " | "\t" | "\r" | "\\n" }
+COMMENT = _{"#" ~(!(newline) ~ ANY)*}
+
+newline = { "\n" | "\r\n" }
+
+word_char = _{
+    !(
+        "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`"
+        | "{" | "}" | "<" | ">" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
+    )
+    ~ ANY
+}
+name_char = _{ "_" | ASCII_ALPHANUMERIC }
+
+special_name = _{ "?"| "$" | "!"| "-" | "#" | "*" | "@" | ASCII_DIGIT }
+name = ${ var_name_char+ }
+word = ${ word_char+ }
+io_number = ${ ASCII_DIGIT+ }
+
+
+// Operators
+
+and_if = { "&&" }
+or_if = { "||" }
+dsemi = { ";;" }
+
+dless = { "<<" }
+dlessdash = { "<<-" }
+dgreat = { ">>" }
+lessand = { "<&" }
+greatand = { ">&" }
+lessgreat = { "<>" }
+
+clober = { ">|" }
+
+//reserved words
+
+if = { "if" }
+then = { "then" }
+else = { "else" }
+elif = { "elif" }
+fi = { "fi" }
+do = { "do" }
+done = { "done" }
+case = { "case" }
+esac = { "esac" }
+while = { "while" }
+until = { "until" }
+for = { "for" }
+
+lbrace = { "{" }
+rbrace = { "}" }
+bang = { "!" }
+
+in = { "in" }
+
+
+//grammar
+
+script = { SOI ~ complete_command ~ EOI }
+
+complete_command = { (list ~ separator) | list }
+
+list = { (list ~ separator_op ~ and_or) | and_or }
+
+and_or = { pipeline | (and_or ~ and_if ~ linebreak ~ pipeline) | (and_or ~ or_if ~ linebreak ~ pipeline) }
+
+pipeline = { pipe_sequence | (bang ~ pipeline) }
+
+pipe_sequence = { command | (pipe_sequence ~ "|" ~ linebreak ~ command) }
+
+command = { simple_command | compound_command | compound_command ~ redirect_list | function_definition }
+
+compound_command = { brace_group | subshell | for_clause | case_clause | if_clause | while_clause | until_clause }
+
+subshell = { "(" ~ compound_list ~ ")" }
+
+compound_list = { term | (newline_list ~ term) | (term ~ separator) | (newline_list ~ term ~ separator) }
+
+term = { (term ~ separator ~ and_or) | and_or }
+
+for_clause = { (for ~ name ~ linebreak ~ do_group) 
+    | (for name ~ linebreak ~ in ~ sequential_sep ~ do_group) 
+    | (for ~ name ~ linebreak ~ in ~ wordlist ~ sequential_sep ~ do_group) 
+}
+
+wordlist = { (wordlist ~ word) | word }
+
+case_clause = {
+    (case ~ word ~ linebreak ~ in ~ linebreak ~ case_list ~ esac)
+    | (case ~ word ~ linebreak ~ in ~ linebreak ~ case_list_ns ~ esac)
+    | (case ~ word ~ linebreak ~ in ~ linebreak ~ esac)
+}
+
+case_list_ns = { (case_list ~ case_item_ns) | case_item_ns }
+case_list = { (case_list ~ case_item) | case_item }
+
+case_item_ns = {
+    (pattern ~ ")" ~ linebreak)
+    | (pattern ~ ")" ~ compound_list ~ linebreak)
+    | ( "(" ~ pattern ~  ")" ~ linebreak)
+    | ( "(" ~ pattern ~ ")" ~ compound_list ~ linebreak)
+}
+case_item = {
+    (pattern ~ ")" ~ linebreak ~ dsemi ~ linebreak)
+    | (pattern ~ ")" ~ compound_list ~ dsemi ~ linebreak)
+    | ( "(" ~ pattern ~  ")" ~ linebreak ~ dsemi ~ linebreak)
+    | ( "(" ~ pattern ~ ")" ~ compound_list ~ dsemi ~ linebreak)
+}
+
+pattern = { word | (pattern ~ "|" ~ word) }
+
+if_clause = {
+    (if ~ compound_list ~ then ~ compound_list ~ else_part ~ fi)
+    | (if ~ compound_list ~ then ~ compound_list ~ fi)
+}
+
+else_part = {
+    (elif ~ compound_list ~ then ~ compound_list)
+    | (elif ~ compound_list ~ then ~ compound_list ~ else_part)
+    | (else ~ compound_list)
+}
+
+while_clause = { while ~ compound_list ~ do_group }
+
+until_clause = { until ~ compound_list ~ do_group }
+
+function_definition = { func_name "(" ~ ")" ~ linebreak ~ function_body }
+func_name = { name }
+
+function_body = { compound_command | (compound_command ~ redirect_list) }
+
+brace_group = { lbrace ~ compound_list ~ rbrace }
+
+do_group = { do ~ compound_list ~ done }
+
+simple_command = {
+    (cmd_prefix ~ cmd_word ~ cmd_suffix)
+    | (cmd_prefix ~ cmd_word)
+    | cmd_prefix
+    | (cmd_name ~ cmd_suffix)
+    | cmd_name
+}
+
+cmd_name = { word }
+cmd_word = { word }
+
+cmd_prefix = {
+    io_redirect
+    | (cmd_prefix ~ io_redirect)
+    | word
+    | (cmd_prefix ~ word)
+}
+cmd_suffix = {
+    io_redirect
+    | (cmd_suffix ~ io_redirect)
+    | word
+    | (cmd_suffix ~ word)
+}
+
+redirect_list = {
+    io_redirect
+    | (redirect_list ~ io_redirect)
+}
+
+io_redirect = {
+    io_file
+    | (io_number ~ io_file)
+    | io_here
+    | (io_number ~ io_here)
+}
+io_file = {
+    (">" ~ filename)
+    | (">>" ~ filename)
+    | ("<" ~ filename)
+    | ("<>" ~ filename)
+    | (">|" ~ filename)
+    | ("<&" ~ filename)
+    | (">&" ~ filename)
+}
+
+filename = { word }
+
+io_here = {
+    ("<<" ~ here_end)
+    | ("<<-" ~ here_end)
+}
+here_end = { word }
+
+newline_list = { newline | (newline_list ~ newline) }
+
+linebreak = { newline_list | "" }
+
+separator_op = {
+    "&"
+    | ";"
+}
+
+separator = {
+    (separator_op ~ linebreak)
+    | newline_list
+}
+
+sequential_sep = {
+    (";" ~ linebreak)
+    | newline_list
+}
