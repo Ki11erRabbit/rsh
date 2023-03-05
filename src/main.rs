@@ -1,11 +1,14 @@
 //mod shell;
 mod parser;
-mod eval;
+mod lexer;
+mod parser_alt;
+mod eval_alt;
 mod exec;
 mod process;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+
 
 use std::io::{self, Write};
 
@@ -26,7 +29,6 @@ static mut NAME: i32 = 42;
 
 
 fn main() {
-
     /*unsafe {
         signal_hook::low_level::register(2, sig_int_handler).unwrap();
     }
@@ -48,6 +50,6 @@ fn main() {
 
         let ast = parser::parse_input(&input).unwrap();
 
-        let result = eval::eval(&ast, 0, 1, 2);
+        //let result = eval::eval(&ast, 0, 1, 2);
     }
 }

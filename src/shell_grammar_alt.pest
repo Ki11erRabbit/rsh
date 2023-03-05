@@ -14,7 +14,7 @@ word_char = _{
 name_char = _{ "_" | ASCII_ALPHANUMERIC }
 
 special_name = _{ "?"| "$" | "!"| "-" | "#" | "*" | "@" | ASCII_DIGIT }
-name = ${ var_name_char+ }
+name = ${ name_char+ }
 word = ${ word_char+ }
 io_number = ${ ASCII_DIGIT+ }
 
@@ -80,8 +80,9 @@ compound_list = { term | (newline_list ~ term) | (term ~ separator) | (newline_l
 
 term = { (term ~ separator ~ and_or) | and_or }
 
-for_clause = { (for ~ name ~ linebreak ~ do_group) 
-    | (for name ~ linebreak ~ in ~ sequential_sep ~ do_group) 
+for_clause = { 
+    (for ~ name ~ linebreak ~ do_group) 
+    | (for ~ name ~ linebreak ~ in ~ sequential_sep ~ do_group) 
     | (for ~ name ~ linebreak ~ in ~ wordlist ~ sequential_sep ~ do_group) 
 }
 
@@ -126,7 +127,7 @@ while_clause = { while ~ compound_list ~ do_group }
 
 until_clause = { until ~ compound_list ~ do_group }
 
-function_definition = { func_name "(" ~ ")" ~ linebreak ~ function_body }
+function_definition = { func_name ~ "(" ~ ")" ~ linebreak ~ function_body }
 func_name = { name }
 
 function_body = { compound_command | (compound_command ~ redirect_list) }
@@ -190,7 +191,7 @@ here_end = { word }
 
 newline_list = { newline | (newline_list ~ newline) }
 
-linebreak = { newline_list | "" }
+linebreak = { (newline_list)? }
 
 separator_op = {
     "&"

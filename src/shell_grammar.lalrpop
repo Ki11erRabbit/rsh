@@ -1,0 +1,319 @@
+use crate::parser_alt::*;
+
+
+
+
+
+
+
+grammar;
+
+pub CompleteCommand: parser_alt::CompleteCommand = {
+    <list:List> => parser_alt::CompleteCommand { list },
+}
+
+pub List: parser_alt::List = {
+    <list:List> <op:SeparatorOp> <and_or:AndOr> => list.push(and_or),
+    <and_or:AndOr> => parser_alt::List(vec![and_or]),
+}
+
+pub AndOr: parser_alt::AndOr = {
+    <pipeline:Pipeline> => parser_alt::AndOr{and_or: None, conditional_exec: None, pipeline},
+    <and_or:AndOr> <op:AND_IF> <lb:Linebreak> <pipeline:Pipeline> => parser_alt::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(parser_alt::ConditionalExec::And), pipeline},
+    <and_or:AndOr> <op:OR_IF> <lb:Linebreak> <pipeline:Pipeline> => parser_alt::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(parser_alt::ConditionalExec::Or), pipeline},
+}
+
+pub Pipeline: parser_alt::Pipeline = {
+    <ps:PipeSequence> => parser_alt::Pipeline{bang: false, pipe_sequence: ps},
+    <bang:Bang> <ps:PipeSequence> => parser_alt::Pipeline{bang: true, pipe_sequence: ps},
+}
+
+pub PipeSequence: parser_alt::PipeSequence = {
+    <cmd:Command> => parser_alt::PipeSequence(vec![cmd]),
+    <ps:PipeSequence> "|" <cmd:Command> => ps.push(cmd),
+}
+
+pub Command: parser_alt::Command = {
+    <cmd:SimpleCommand> => parser_alt::Command::SimpleCommand(cmd),
+    <cmd:CompoundCommand> => parser_alt::Command::CompoundCommand(cmd, None), 
+    <cmd:CompoundCommand> <redir:RedirectList> => parser_alt::Command::CompoundCommand(cmd, Some(redir)),
+    <func:FunctionDefinition> => parser_alt::Command::FunctionDefinition(func),
+}
+
+pub CompoundCommand: parser_alt::CompoundCommand = {
+    <bg:BraceGroup> => parser_alt::CompoundCommand::BraceGroup(bg),
+    <sub:Subshell> => parser_alt::CompoundCommand::SubShell(sub),
+    <For:ForClause> => parser_alt::CompoundCommand::ForClause(For),
+    <case:CaseClause> => parser_alt::CompoundCommand::CaseClause(case),
+    <If:IfClause> => parser_alt::CompoundCommand::IfClause(If),
+    <While:WhileClause> => parser_alt::CompoundCommand::WhileClause(While),
+    <until:UntilClause> => parser_alt::CompoundCommand::UntilClause(until),
+}
+
+pub Subshell: parser_alt::Subshell = {
+    "(" <list:CompoundList> ")" => parser_alt::Subshell(list),
+}
+
+pub CompoundList: parser_alt::CompoundList = {
+    <term:Term> => parser_alt::CompoundList(term),
+    <nll:NewlineList> <term:Term> => parser_alt::CompoundList(term),
+    <term:Term> <sep:Separator> => parser_alt::CompoundList(term),
+    <nll:NewlineList> <term:Term> <sep:Separator> => parser_alt::CompoundList(term),
+} 
+
+pub Term: parser_alt::Term = {
+    <term:Term> <sep:Separator> <and_or:AndOr> => term.push(and_or),
+    <and_or:AndOr> => parser_alt::Term(vec![and_or]),
+}
+
+pub ForClause: parser_alt::ForClause = {
+    <For:For> <name:Name> <lb:Linebreak> <dg:DoGroup> => parser_alt::ForClause{parser_alt::ForType::ForClauseReg(parser_alt::ForClauseReg{name}), do_group: dg},
+    <For:For> <name:Name> <lb:Linebreak> <In:In> <seq_sep:SequentialSeparator> <dg:DoGroup> => parser_alt::ForClause{parser_alt::ForType::ForClauseReg(parser_alt::ForClauseReg{name}), do_group: dg},
+    <For:For> <name:Name> <lb:Linebreak> <In:In> <wdl:WordList> <seq_sep:SequentialSeparator> <dg:DoGroup> => parser_alt::ForClause{parser_alt::ForType::ForClauseList(parser_alt::ForClauseList{name, word_list: wdl}), do_group: dg},
+}
+
+pub WordList: parser_alt::WordList = {
+    <wdl:WordList> <word:Word> => wdl.push(word),
+    <word:Word> => parser_alt::WordList(vec![word]),
+}
+
+pub CaseClause: parser_alt::CaseClause = {
+    <case:Case> <word:Word> <In:In> <lb:Linebreak> <cl:CaseList> <esac:Esac> => parser_alt::CaseClause{word, case_list: Some(cl)},
+    <case:Case> <word:Word> <In:In> <lb:Linebreak> <cl:CaseListNS> <esac:Esac> => parser_alt::CaseClause{word, case_list: Some(cl)},
+    <case:Case> <word:Word> <In:In> <lb:Linebreak> <esac:Esac> => parser_alt::CaseClause{word, case_list: None},
+}
+
+pub CaseList: parser_alt::CaseList = {
+    <cl:CaseList> <ci:CaseItem> => cl.push(ci),
+    <ci:CaseItem> => parser_alt::CaseList(vec![ci]),
+}
+
+pub CaseListNS: parser_alt::CaseList = {
+    <cl:CaseListNS> <ci:CaseItemNS> => cl.push(ci),
+    <ci:CaseItemNS> => parser_alt::CaseListNS(vec![ci]),
+}
+
+pub CaseItemNS: parser_alt::CaseItem = {
+    <pat:Pattern> ")" <lb:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: None},
+    <pat:Pattern> ")" <lb:Linebreak> <cl:CompoundList> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: Some(cl)},
+    "(" <pat:Pattern> ")" <lb:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: None},
+    "(" <pat:Pattern> ")" <lb:Linebreak> <cl:CompoundList> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: Some(cl)},
+}
+
+pub CaseItem: parser_alt::CaseItem = {
+    <pat:Pattern> ")" <lb:Linebreak> <ds:DSEMI> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: None},
+    <pat:Pattern> ")" <lb:Linebreak> <cl:CompoundList> <ds:DSEMI> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: Some(cl)},
+    "(" <pat:Pattern> ")" <lb:Linebreak> <ds:DSEMI> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: None},
+    "(" <pat:Pattern> ")" <lb:Linebreak> <cl:CompoundList> <ds:DSEMI> <lb2:Linebreak> => parser_alt::CaseItem{pattern: pat, compound_list: Some(cl)},
+}
+
+pub Pattern: parser_alt::Pattern = {
+    <word:Word> => parser_alt::Pattern(vec![word]), 
+    <pat:Pattern> "|" <word:Word> => pat.push(word),
+}
+
+pub IfClause: parser_alt::IfClause = {
+    <If:If> <cl:CompoundList> <then:Then> <cl2:CompoundList> <ep:ElsePart> <fi:Fi> => parser_alt::IfClause{condition: cl, then: cl2, else_part: ep},
+    <If:If> <cl:CompoundList> <then:Then> <cl2:CompoundList> <fi:Fi> => parser_alt::IfClause{condition: cl, then: cl2, else_part: vec![]},
+}
+
+pub ElsePart: Vec<parser_alt::ElsePart> = {
+    <elif:Elif> <cl:CompoundList> <then:Then> <cl2:CompoundList> => vec![parser_alt::ElsePart{condition: Some(cl), then: cl2}],
+    <elif:Elif> <cl:CompoundList> <then:Then> <cl2:CompoundList> <ep:ElsePart> => ep.insert(parser_alt::ElsePart{condition: Some(cl), then: cl2}, 0),
+    <Else:Else> <cl:CompoundList> => vec![parser_alt::ElsePart{condition: None, then: cl}],
+}
+
+pub WhileClause: parser_alt::WhileClause = {
+    <While:While> <cl:CompoundList> <dg:DoGroup> => parser_alt::WhileClause{condition: cl, do_group: dg},
+}
+
+pub UntilClause: parser_alt::UntilClause = {
+    <until:Until> <cl:CompoundList> <dg:DoGroup> => parser_alt::UntilClause{condition: cl, do_group: dg},
+}
+
+pub FunctionDefinition: parser_alt::FunctionDefinition = {
+    <name:Name> "(" ")" <lb:Linebreak> <fb:FunctionBody> => parser_alt::FunctionDefinition{name, body: fb},
+}
+
+pub FunctionBody: parser_alt::FunctionBody = {
+    <cc:CompoundCommand> => parser_alt::FunctionBody{compound_command: cc, compound_list: None},
+    <cc:CompoundCommand> <redirects:RedirectList> => parser_alt::FunctionBody{compound_command: cc, compound_list: Some(redirects)},
+}
+
+pub BraceGroup: parser_alt::BraceGroup = {
+    <lb:Lbrace> <cl:CompoundList> <rb:Rbrace> => parser_alt::BraceGroup(cl),
+}
+
+pub DoGroup: parser_alt::DoGroup = {
+    <do:Do> <cl:CompoundList> <done:Done> => parser_alt::DoGroup(cl),
+}
+
+pub SimpleCommand: parser_alt::SimpleCommand = {
+    <cmdpf:CmdPrefix> <cmd:Word> <cmdsf:CmdSuffix> => parser_alt::SimpleCommand{prefix: Some(cmdpf), command: cmd, suffix: Some(cmdsf)},
+    <cmdpf:CmdPrefix> <cmd:Word> => parser_alt::SimpleCommand{prefix: Some(cmdpf), command: cmd, suffix: None},
+    <cmd:Word> <cmdsf:CmdSuffix> => parser_alt::SimpleCommand{prefix: None, command: cmd, suffix: Some(cmdsf)},
+    <cmd:Word> => parser_alt::SimpleCommand{prefix: None, command: cmd, suffix: None},
+    <cmdpf:CmdPrefix> => parser_alt::SimpleCommand{prefix: Some(cmdpf), command: "".to_string(), suffix: None},
+}
+
+pub CmdPrefix: parser_alt::Prefix = {
+    <ior:IORedirect> => parser_alt::Prefix{io_redirect: vec![ior], assignment: Vec::new()},
+    <cmdpf:CmdPrefix> <ior:IORedirect> => cmdpf.io_redirect.push(ior),
+    <word:AssignmentWord> => parser_alt::Prefix{io_redirect: Vec::new(), assignment: vec![word]},
+    <cmdpf:CmdPrefix> <word:AssignmentWord> => cmdpf.assignment.push(word),
+}
+
+pub CmdSuffix: parser_alt::Suffix = {
+    <ior:IORedirect> => parser_alt::Suffix{io_redirect: vec![ior], assignment: Vec::new()},
+    <cmdsf:CmdSuffix> <ior:IORedirect> => cmdsf.io_redirect.push(ior),
+    <word:AssignmentWord> => parser_alt::Suffix{io_redirect: Vec::new(), assignment: vec![word]},
+    <cmdsf:CmdSuffix> <word:AssignmentWord> => cmdsf.assignment.push(word),
+}
+
+pub RedirectList: parser_alt::RedirectList = {
+    <ior:IORedirect> => parser_alt::RedirectList(vec![ior]),
+    <rl:RedirectList> <ior:IORedirect> => rl.push(ior),
+} 
+
+pub IORedirect: parser_alt::IoRedirect = {
+    <iof:IOFile> => parser_alt::IoRedirect{io_file: Some(iof), io_number: None, io_here: None},
+    <ion:Number> <iof:IOFile> => parser_alt::IoRedirect{io_file: Some(iof), io_number: Some(ion), io_here: None},
+}
+
+pub IOFile: parser_alt::IoFile = {
+    "<" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Input, filename: word},
+    ">" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Output, filename: word},
+    ">>" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Append, filename: word},
+}
+
+Bang: String = {
+    r"!" => <>.to_string(),
+}
+
+
+AssignmentWord: String = {
+    r"[_|[:alpha:]]+=.+" => <>.to_string().trim().to_string(),
+}
+
+Word: String = {
+    r"[...]+" => <>.to_string()
+}
+
+Name: String = {
+    r"[...]+" => <>.to_string()
+}
+
+Number: i32 = {
+    r"[0-9]+" => <>.parse().unwrap()
+}
+
+
+//operators
+
+AND_IF: String = {
+    r"\&\&" => <>.to_string()
+}
+OR_IF: String = {
+    "||" => <>.to_string()
+}
+DSEMI: String = {
+    ";;" => <>.to_string()
+}
+
+DLESS: String = {
+    "<<" => <>.to_string()
+}
+DLESSDASH: String = {
+    r"<<-" => <>.to_string()
+}
+DGREAT: String = {
+    r">>" => <>.to_string()
+}
+LESSAND: String = {
+    r"<\&" => <>.to_string()
+}
+GREATAND: String = {
+    r">\&" => <>.to_string()
+}
+LESSGREAT: String = {
+    r"<>" => <>.to_string()
+}
+CLOBBER: String = {
+    r">\|" => <>.to_string()
+}
+
+//reserved words
+
+If: String = {
+    r"if" => <>.to_string()
+}
+Then: String = {
+    r"then" => <>.to_string()
+}
+Else: String = {
+    r"else" => <>.to_string()
+}
+Elif: String = {
+    r"elif" => <>.to_string()
+}
+Fi: String = {
+    r"fi" => <>.to_string()
+}
+Do: String = {
+    r"do" => <>.to_string()
+}
+Done: String = {
+    r"done" => <>.to_string()
+}
+Case: String = {
+    r"case" => <>.to_string()
+}
+Esac: String = {
+    r"esac" => <>.to_string()
+}
+While: String = {
+    r"while" => <>.to_string()
+}
+Until: String = {
+    r"until" => <>.to_string()
+}
+For: String = {
+    r"for" => <>.to_string()
+}
+
+In: String = {
+    r"in" => <>.to_string()
+}
+
+Lbrace: String = {
+    r"\{" => <>.to_string()
+}
+Rbrace: String = {
+    r"\}" => <>.to_string()
+}
+
+NewlineList: String = {
+    r"\\n+" => <>.to_string(),
+}
+
+
+Linebreak: String = {
+    r"" => <>.to_string(),
+    <nll:NewlineList> => nll,
+}
+
+SeparatorOp: String = {
+    r";|\&" => <>.to_string(),
+}
+
+Separator: String = {
+    <op:SeparatorOp> <lb:Linebreak> => op + &lb,
+    <nll:NewlineList> => nll,
+}
+
+SequentialSeparator: String = {
+    <sepop:SeparatorOp> <lb:Linebreak> => sepop + &lb,
+    <nll:NewlineList> => nll,
+}
+
+
