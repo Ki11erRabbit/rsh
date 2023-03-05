@@ -183,7 +183,7 @@ pub IORedirect: parser_alt::IoRedirect = {
 pub IOFile: parser_alt::IoFile = {
     "<" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Input, filename: word},
     ">" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Output, filename: word},
-    ">>" <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Append, filename: word},
+    <dg:DGREAT> <word:Word> => parser_alt::IoFile{redirect_type: parser_alt::RedirectType::Append, filename: word},
 }
 
 Bang: String = {
@@ -293,7 +293,7 @@ Rbrace: String = {
 }
 
 NewlineList: String = {
-    r"\\n+" => <>.to_string(),
+    r"\n+" => <>.to_string(),
 }
 
 
