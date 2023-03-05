@@ -1,7 +1,7 @@
 //mod shell;
 mod parser;
 mod lexer;
-mod parser_alt;
+mod ast;
 mod eval_alt;
 mod exec;
 mod process;
