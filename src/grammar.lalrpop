@@ -1,0 +1,84 @@
+
+grammar<'input>(text: &'input str);
+
+extern {
+    type Error = lex::Error;
+
+    enum lexer::Token<'input> {
+        "tab"           => Token::Tab,
+        "space"         => Token::Space,
+        "newline"       => Token::Newline,
+        "comment"       => Token::Comment,
+        "semicolon"     => Token::Semicolon,
+        "comma"         => Token::Comma,
+        "pipe"          => Token::Pipe,
+        "ampersand"     => Token::Ampersand,
+        "and"           => Token::And,
+        "or"            => Token::Or,
+        "equals"        => Token::Equals,
+        "bang"          => Token::Bang,
+        "open_paren"    => Token::OpenParen,
+        "close_paren"   => Token::CloseParen,
+        "open_brace"    => Token::OpenBrace,
+        "close_brace"   => Token::CloseBrace,
+        "greater"       => Token::Greater,
+        "less"          => Token::Less,
+        "double_greater"=> Token::DoubleGreater,
+        "double_less"   => Token::DoubleLess,
+        "dollar"        => Token::Dollar,
+        "greaterAnd"    => Token::GreaterAnd,
+        "lessAnd"       => Token::LessAnd,
+        "for"           => Token::For,
+        "in"            => Token::In,
+        "if"            => Token::If,
+        "else"          => Token::Else,
+        "elif"          => Token::Elif,
+        "while"         => Token::While,
+        "until"         => Token::Until,
+        "do"            => Token::Do,
+        "break"         => Token::Break,
+        "continue"      => Token::Continue,
+        "return"        => Token::Return,
+        "Word"          => Token::Word(<&'input str>),
+        "Number"        => Token::Number(<RawFd>),
+
+    }
+}
+
+
+Assignment: String = {
+    <var:"Word"> <eq:"equals"> <val:Word> => {
+        let mut s = String::from(var);
+        s.push_str(eq);
+        s.push_str(val);
+        s
+    }
+}
+
+
+SeparatorOp: String = {
+    <sep:"semicolon"> => String::from(sep),
+    <sep:"ampersand"> => String::from(sep),
+}
+
+Separator: String = {
+    <op:SeparatorOp> => op,
+    <nl:NewlineList> => nl,
+}
+
+SequentialSeparator: String = {
+    <sep:"semicolon"> => String::from(sep),
+    <nl:NewlineList> => nl,
+}
+
+
+NewlineList: String = {
+    <nl:"newline"> => String::from(nl),
+    <nl:"newline"> <list:NewlineList> => {
+        let mut s = String::from(nl);
+        s.push_str(&list);
+        s
+    }
+}
+
+
