@@ -1,14 +1,15 @@
 use std::os::unix::io::RawFd;
 use crate::lexer::Lexer;
 use lalrpop_util::lalrpop_mod;
+use std::ffi::CString;
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct CompleteCommand {
-    list: List,
+    pub list: List,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct List(Vec<AndOr>);
+pub struct List(pub Vec<AndOr>);
 
 impl List {
     pub fn new() -> Self {
@@ -33,19 +34,19 @@ pub enum ConditionalExec {
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct AndOr {
-    and_or: Option<Box<AndOr>>,
-    conditional_exec: Option<ConditionalExec>,
-    pipeline: Pipeline,
+    pub and_or: Option<Box<AndOr>>,
+    pub conditional_exec: Option<ConditionalExec>,
+    pub pipeline: Pipeline,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct Pipeline {
-    bang: bool,
-    pipe_sequence: PipeSequence,
+    pub bang: bool,
+    pub pipe_sequence: PipeSequence,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct PipeSequence(Vec<Command>);
+pub struct PipeSequence(pub Vec<Command>);
 
 impl PipeSequence {
     pub fn new() -> Self {
@@ -81,14 +82,14 @@ pub enum CompoundCommand {
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct Subshell {
-    compound_list: CompoundList,
+    pub compound_list: CompoundList,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct CompoundList(Term);
+pub struct CompoundList(pub Term);
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct Term(Vec<AndOr>);
+pub struct Term(pub Vec<AndOr>);
 
 
 #[derive(Debug,Clone,PartialEq)]
@@ -99,113 +100,128 @@ pub enum ForType {
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct ForClauseReg {
-    name: String,
+    pub name: String,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct ForClauseList {
-    name: String,
-    word_list: WordList,
+    pub name: String,
+    pub word_list: WordList,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct ForClause {
-    for_type: ForType,
-    do_group: DoGroup,
+    pub for_type: ForType,
+    pub do_group: DoGroup,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct WordList(Vec<String>);
+pub struct WordList(pub Vec<String>);
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct CaseClause {
-    word: String,
-    case_list: Option<CaseList>,
+    pub word: String,
+    pub case_list: Option<CaseList>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct CaseList(Vec<CaseItem>);
+pub struct CaseList(pub Vec<CaseItem>);
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct CaseItem {
-    pattern: Pattern,
-    compound_list: Option<CompoundList>,
+    pub pattern: Pattern,
+    pub compound_list: Option<CompoundList>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct Pattern(Vec<String>);
+pub struct Pattern(pub Vec<String>);
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct IfClause {
-    condition: CompoundList,
-    then: CompoundList,
-    else_part: Vec<ElsePart>,
+    pub condition: CompoundList,
+    pub then: CompoundList,
+    pub else_part: Vec<ElsePart>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct ElsePart {
-    condition: Option<CompoundList>,
-    then: CompoundList,
+    pub condition: Option<CompoundList>,
+    pub then: CompoundList,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct WhileClause {
-    condition: CompoundList,
-    do_group: DoGroup,
+    pub condition: CompoundList,
+    pub do_group: DoGroup,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct UntilClause {
-    condition: CompoundList,
-    do_group: DoGroup,
+    pub condition: CompoundList,
+    pub do_group: DoGroup,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct FunctionDefinition {
-    name: String,
-    function_body: FunctionBody,
+    pub name: String,
+    pub function_body: FunctionBody,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct FunctionBody {
-    compound_command: CompoundCommand,
-    redirect_list: Option<RedirectList>,
+    pub compound_command: CompoundCommand,
+    pub redirect_list: Option<RedirectList>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct BraceGroup(CompoundList);
+pub struct BraceGroup(pub CompoundList);
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct DoGroup(CompoundList);
+pub struct DoGroup(pub CompoundList);
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct SimpleCommand {
-    prefix: Option<Prefix>,
-    name: String,
-    suffix: Option<Suffix>,
+    pub prefix: Option<Prefix>,
+    pub name: String,
+    pub suffix: Option<Suffix>,
+}
+
+impl SimpleCommand {
+    pub fn argv(&self) -> Vec<CString> {
+        let mut argv = Vec::new();
+        argv.push(CString::new(self.name.clone()).unwrap());
+        
+        if self.suffix.is_some() {
+            for word in self.suffix.as_ref().unwrap().word.iter() {
+                argv.push(CString::new(word.clone()).unwrap());
+            }
+        }
+
+        argv
+    }
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct Prefix {
-    io_redirect: Vec<IoRedirect>,
-    assignment: Vec<String>
+    pub io_redirect: Vec<IoRedirect>,
+    pub assignment: Vec<String>
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct Suffix {
-    io_redirect: Vec<IoRedirect>,
-    word: Vec<String>,
+    pub io_redirect: Vec<IoRedirect>,
+    pub word: Vec<String>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
-pub struct RedirectList(Vec<IoRedirect>);
+pub struct RedirectList(pub Vec<IoRedirect>);
 
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct IoRedirect {
-    io_number: Option<RawFd>,
-    io_file: Option<IoFile>,
-    io_here: Option<IoHere>,
+    pub io_number: Option<RawFd>,
+    pub io_file: Option<IoFile>,
+    pub io_here: Option<IoHere>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -218,18 +234,18 @@ pub enum RedirectType {
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct IoFile {
-    redirect_type: RedirectType,
-    filename: String,
+    pub redirect_type: RedirectType,
+    pub filename: String,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct IoHere {
-    here: String,
+    pub here: String,
 }
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct NewlineList {
-    list: Vec<String>,
+    pub list: Vec<String>,
 }
 
 

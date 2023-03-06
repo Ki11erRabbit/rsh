@@ -2,17 +2,22 @@
 //mod parser;
 mod lexer;
 mod ast;
+mod eval;
+mod jobs;
 //mod eval_alt;
 //mod exec;
 //mod process;
+use lalrpop_util::lalrpop_mod;
 
-
+use lexer::Lexer;
 use std::io::{self, Write};
 
 
 use std::thread::sleep;
 
 use signal_hook::{iterator::Signals};
+
+lalrpop_mod!(pub grammar);
 
 fn sig_int_handler() {
         sleep(std::time::Duration::from_secs(4));
@@ -44,6 +49,13 @@ fn main() {
 
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
+
+        let lexer = Lexer::new(&input);        
+        let ast = grammar::CompleteCommandParser::new()
+            .parse(&input,lexer)
+            .unwrap();
+
+        let result = eval::eval(&ast);
 
         //let ast = parser::parse_input(&input).unwrap();
 

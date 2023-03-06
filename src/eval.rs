@@ -1,108 +1,121 @@
-use crate::parser::{self, Assignment, Command,Ast, BinaryExpression, ConditionalExpression, Expression, Initializer, LocalDeclaration, RunIf, Word, RedirectionType};
-use crate::process::{self, CommandExitStatus};
-use crate::exec;
-use std::os::unix::io::FromRawFd;
+use crate::ast::*;
+use crate::jobs::Process;
+use std::ffi::CString;
+use crate::jobs::Job;
+
+
 use std::os::unix::io::RawFd;
-use nix::unistd::Pid;
+use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
 use nix::sys::wait::wait;
 
-pub type Result<I> = std::result::Result<I, &'static str>;
-
-pub struct Context {
-    pub stdin: RawFd,
-    pub stdout: RawFd,
-    pub stderr: RawFd,
-    pub background: bool,
-    pub pgid: Option<Pid>,
-}
 
 
 
 
 
+pub fn eval(ast: &CompleteCommand) -> Result<i32,&'static str> {
 
-
-
-fn run_simple_command(argv: &[Word], redirects: &[parser::Redirection], assignments: &[Assignment], context: &Context) -> Result<CommandExitStatus> {
-    //expand words
-    if argv.is_empty() {
-        return Ok(CommandExitStatus::ExitedWith(0));
-    }
-
-    let argv = argv.iter().map(|w| w.to_string()).collect::<Vec<String>>();
-
-    //function
-
-
-    //builtin
-    
-
-    exec::exec(argv, redirects, assignments, context)
-}
-
-
-
-
-fn run_command(command: &parser::Command, context: &Context) -> Result<CommandExitStatus> {
-    let result = match command {
-        parser::Command::SimpleCommand {argv,redirects, assignments} => run_simple_command(argv, redirects, assignments, context)?,
-        _ => unimplemented!(),
-    };
-
-    wait().unwrap();
-
+    let result = parse_tree(&ast.list)?;
 
     Ok(result)
 }
 
-fn run_pipeline(code: &str, pipeline: &parser::Pipeline, pipeline_stdin: RawFd, pipeline_stdout: RawFd, stderr: RawFd, background: bool) -> CommandExitStatus {
-    //let mut last_result = None;
-    let mut iter = pipeline.commands.iter().peekable();
-    //let mut childs = Vec::new();
-    let mut stdin = pipeline_stdin;
-    let mut pgid = None;    
+fn parse_tree(list: &List) -> Result<i32,&'static str> {
+    let mut status = -1;
+    for and_or in list.0.iter() {
+        status = eval_pipeline(&and_or.pipeline)?;
+    } 
 
-    while let Some(command) = iter.next() {
-        let mut stdout = pipeline_stdout;
-
-        let result = run_command(command, &Context {
-            stdin,
-            stdout,
-            stderr,
-            background,
-            pgid,
-        });
-    }
-
-    CommandExitStatus::ExitedWith(0)
-
+    Ok(status)
 }
 
+fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
-pub fn run_terms(terms: &[parser::Term], stdin: RawFd, stdout: RawFd, stderr: RawFd) -> CommandExitStatus {
-    let mut last_status = CommandExitStatus::ExitedWith(0);
-    for term in terms {
-        for pipeline in &term.pipelines {
-            match (&last_status, &pipeline.run_if) {
-                (CommandExitStatus::ExitedWith(0), RunIf::Success) => (),
-                (CommandExitStatus::ExitedWith(_), RunIf::Failure) => (),
-                (CommandExitStatus::Break, _) => return CommandExitStatus::Break,
-                (CommandExitStatus::Continue, _) => return CommandExitStatus::Continue,
-                (CommandExitStatus::Return, _) => return CommandExitStatus::Return,
-                (_, RunIf::Always) => (),
-                _ => continue,
-            }
+    let pipeline: &PipeSequence = &pipeline.pipe_sequence;
+    
+    let mut processes: Vec<Process> = Vec::new();
 
-            last_status = run_pipeline(&term.code, pipeline, stdin, stdout, stderr, term.background);
+    for command in pipeline.iter() {
+        let process = eval_command(command)?;
+        processes.push(process);
+    }
+
+    let job = temp_exec(processes)?;
+
+    for process in job.processes.iter() {
+        wait().unwrap();
+    }
+
+
+    Ok(0)
+}
+
+fn eval_command(command: &Command) -> Result<Process,&'static str> {
+
+    match command {
+        Command::SimpleCommand(simple_command) => {
+            return eval_simple_command(simple_command);
+        },
+        _ => {
+            return Err("Not implemented");
         }
+        
     }
 
-    last_status
+}
+
+fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Process,&'static str> {
+    
+    //todo deal with redirection and assignment
+    let mut argv: Vec<CString> = simple_command.argv();
+
+    let process = Process::new(argv);
+
+    Ok(process)
+}
+
+
+fn temp_exec(processes: Vec<Process>) -> Result<Job,&'static str> {
+    let mut procs = processes;
+
+    let mut pgid = None;
+
+    for process in procs.iter_mut() {
+        
+
+        match unsafe{fork()}.expect("Fork failed") {
+            ForkResult::Parent { child } => {
+                process.set_pid(child);
+            },
+            ForkResult::Child => {
+                if pgid.is_none() {
+                    pgid = Some(getpid());
+                }
+                let pid = getpid();
+                setpgid(pid, pgid.unwrap()).unwrap();
+
+
+                //set env
+                //
+                //set assignments
+
+                match execv(&process.argv[0], &process.argv) {
+                    Ok(_) => {
+                        unreachable!();
+                    },
+                    Err(e) => {
+                        println!("Failed to execute: {}", e);
+                    }
+                }
+            }
+            
+        }
+
+    }
+
+   Ok(Job::new(procs))
 }
 
 
 
 
-pub fn eval(ast: &Ast, stdin: RawFd, stdout: RawFd, stderr: RawFd) -> CommandExitStatus {
-    run_terms(&ast.terms,stdin,stdout,stderr)
-}

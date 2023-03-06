@@ -85,11 +85,11 @@ Command: ast::Command = {
 }
 
 SimpleCommand: ast::SimpleCommand = {
-    <cmdpf:Prefix> <cmd:CmdWord> <cmdsf:Suffix> => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: Some(cmdsf)},
-    <cmdpf:Prefix> <cmd:CmdWord>  => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: None},
-    <cmd:CmdName> <cmdsf:Suffix> => ast::SimpleCommand{prefix: None, name: cmd, suffix: Some(cmdsf)},
-    <cmd:CmdName> => ast::SimpleCommand{prefix: None, name: cmd, suffix: None},
-    <cmdpf:Prefix> => ast::SimpleCommand{prefix: Some(cmdpf), name: String::new(), suffix: None},
+    <cmdpf:Prefix> <cmd:CmdWord> <cmdsf:Suffix> <sep:Separator> => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: Some(cmdsf)},
+    <cmdpf:Prefix> <cmd:CmdWord>  <sep:Separator> => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: None},
+    <cmd:CmdName> <cmdsf:Suffix> <sep:Separator> => ast::SimpleCommand{prefix: None, name: cmd, suffix: Some(cmdsf)},
+    <cmd:CmdName> <sep:Separator> => ast::SimpleCommand{prefix: None, name: cmd, suffix: None},
+    <cmdpf:Prefix> <sep:Separator> => ast::SimpleCommand{prefix: Some(cmdpf), name: String::new(), suffix: None},
 }
 
 Prefix: ast::Prefix = {

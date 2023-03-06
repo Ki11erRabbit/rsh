@@ -155,6 +155,17 @@ impl<'input> Iterator for Lexer<'input> {
                         _ => Some(Ok((start, Token::Less, end))),
                     }
                 },
+                '=' => Some(Ok((start, Token::Equals, end))),
+                '"' => {
+                    let (word, end) = self.take_until_seen_twice(start, end, |c| c == '"');
+                    self.advance();
+                    Some(Ok((start, Token::Word(word), end)))
+                },
+                '\'' => {
+                    let (word, end) = self.take_until_seen_twice(start, end, |c| c == '\'');
+                    self.advance();
+                    Some(Ok((start, Token::Word(word), end)))
+                },
                 '!' => Some(Ok((start, Token::Bang, end))),
                 chr if is_word_start(chr) => Some(self.word(start, end)),
                 chr if chr.is_whitespace() => continue,
@@ -197,7 +208,25 @@ impl<'input> Lexer<'input> {
             } else if let Some((_, _, e)) = self.advance() {
                 end = e;
             }
-        }
+        } 
+        (&self.input[start..end], end)
+    }
+    fn take_until_seen_twice<F>(&mut self, start: usize, mut end: usize,  mut terminate: F)
+        -> (&'input str, usize)
+        where F: FnMut(char) -> bool
+    {
+        let mut count = 0;
+        while let Some((_, c, _)) = self.lookahead {
+            if count == 2 {
+                return (&self.input[start..end], end);
+            }
+            else if terminate(c) {
+                count += 1;
+            } 
+            else if let Some((_, _, e)) = self.advance() {
+                end = e;
+            }
+        } 
         (&self.input[start..end], end)
     }
 
@@ -255,14 +284,14 @@ impl<'input> Lexer<'input> {
 
 fn is_word_start(chr: char) -> bool {
     match chr {
-        'a'..='z' | 'A'..='Z' | '_' | '0'..='9' => true,
+        'a'..='z' | 'A'..='Z' | '_' | '0'..='9' | '"' | '\''  => true,
         _ => is_word_continue(chr),
     }
 }
 
 fn is_word_continue(chr: char) -> bool {
     match chr {
-        ';' | '&' | '|' | '(' | ')' | '{' | '}' | '<' | '>' | '!' | '$' | '`' | '*' | '&' => false,
+        ';' | '&' | '|' | '(' | ')' | '{' | '}' | '<' | '>' | '!' | '$' | '`' | '*'  => false,
         _ => !chr.is_whitespace(),
     }
 }
