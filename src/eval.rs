@@ -2,6 +2,7 @@ use crate::ast::*;
 use crate::jobs::Process;
 use std::ffi::CString;
 use crate::jobs::Job;
+use crate::builtins;
 
 
 use std::os::unix::io::RawFd;
@@ -37,20 +38,27 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
     for command in pipeline.iter() {
         let process = eval_command(command)?;
-        processes.push(process);
+        if process.is_none() {
+            break;   
+        }
+        else {
+            processes.push(process.unwrap());
+        }
     }
+    
+    if processes.len() > 0 {
+        let job = temp_exec(processes)?;
 
-    let job = temp_exec(processes)?;
-
-    for process in job.processes.iter() {
-        wait().unwrap();
+        for process in job.processes.iter() {
+            wait().unwrap();
+        }
     }
 
 
     Ok(0)
 }
 
-fn eval_command(command: &Command) -> Result<Process,&'static str> {
+fn eval_command(command: &Command) -> Result<Option<Process>,&'static str> {
 
     match command {
         Command::SimpleCommand(simple_command) => {
@@ -64,16 +72,44 @@ fn eval_command(command: &Command) -> Result<Process,&'static str> {
 
 }
 
-fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Process,&'static str> {
-    
+fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Option<Process>,&'static str> {
+   
+    if check_if_builtin(&simple_command.name) {
+        return eval_builtin(simple_command);
+    }
+
+
     //todo deal with redirection and assignment
-    let mut argv: Vec<CString> = simple_command.argv();
+    let argv: Vec<CString> = simple_command.argv();
 
     let process = Process::new(argv);
 
-    Ok(process)
+    Ok(Some(process))
 }
 
+fn check_if_builtin(cmd_name: &str) -> bool {
+    match cmd_name {
+        "cd" => true,
+        "exit" => true,
+        _ => false,
+    }
+}
+
+fn eval_builtin(command: &SimpleCommand) -> Result<Option<Process>,&'static str> {
+    match command.name.as_str() {
+        "cd" => {
+            builtins::change_directory(command).unwrap();//TODO: properly handle error
+            Ok(None)
+        },
+        "exit" => {
+            builtins::quit();
+            Ok(None)
+        },
+        _ => {
+            Err("Not implemented")
+        }
+    }
+}
 
 fn temp_exec(processes: Vec<Process>) -> Result<Job,&'static str> {
     let mut procs = processes;

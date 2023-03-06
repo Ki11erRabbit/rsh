@@ -4,6 +4,7 @@ mod lexer;
 mod ast;
 mod eval;
 mod jobs;
+mod builtins;
 //mod eval_alt;
 //mod exec;
 //mod process;
@@ -49,6 +50,10 @@ fn main() {
 
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
+
+        if input.as_str() == "\n" {
+            continue;
+        }
 
         let lexer = Lexer::new(&input);        
         let ast = grammar::CompleteCommandParser::new()
