@@ -4,6 +4,7 @@ use std::ffi::CString;
 use crate::jobs::Job;
 use crate::builtins;
 
+use nix::errno::Errno;
 
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
@@ -36,6 +37,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
     
     let mut processes: Vec<Process> = Vec::new();
 
+    //block interrupts
     for command in pipeline.iter() {
         let process = eval_command(command)?;
         if process.is_none() {
@@ -46,10 +48,67 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
         }
     }
     
-    if processes.len() > 0 {
-        let job = temp_exec(processes)?;
+    //make job
 
-        for process in job.processes.iter() {
+    if processes.len() > 0 {
+        
+        let mut pgid = None;
+
+        let mut pip: (RawFd,RawFd) = (-1,-1);
+        let mut prev_fd: RawFd = -1;
+        let mut count: usize = 0;
+        let proc_count = processes.len();
+        for process in processes.iter_mut() {
+            pip.1 = -1;
+            if count < proc_count - 1 {
+                let pipe_result = pipe();
+                if pipe_result.is_err() {
+                    return Err("Failed to create pipe");
+                }
+                pip = pipe_result.unwrap();
+            }
+
+            if temp_fork(process) == Ok(Pid::from_raw(0)) {
+                if pgid.is_none() {
+                    pgid = Some(getpid());
+                }
+                let pid = getpid();
+                setpgid(pid, pgid.unwrap()).unwrap();
+
+                //unblock interrupts
+                if pip.1 >= 0 {
+                    close(pip.0).unwrap();
+                }
+                if prev_fd > 0 {
+                    dup2(prev_fd, 0).unwrap();
+                    close(prev_fd).unwrap();
+                }
+                if pip.1 > 1 {
+                    dup2(pip.1, 1).unwrap();
+                    close(pip.1).unwrap();
+                }
+
+                temp_exec(process).unwrap();
+                unreachable!();
+            }
+            if prev_fd >= 0 {
+                close(prev_fd).unwrap();
+            }
+            prev_fd = pip.0;
+            match close(pip.1) {
+                Ok(_) => {},
+                Err(_) => {}
+            }
+
+            count += 1;
+        }
+
+
+
+
+        //let job = temp_exec(processes)?;
+
+        for _ in 0..proc_count {
             wait().unwrap();
         }
     }
@@ -102,7 +161,7 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<Process>,&'static str>
             Ok(None)
         },
         "exit" => {
-            builtins::quit();
+            builtins::quit().unwrap();
             Ok(None)
         },
         _ => {
@@ -111,45 +170,35 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<Process>,&'static str>
     }
 }
 
-fn temp_exec(processes: Vec<Process>) -> Result<Job,&'static str> {
-    let mut procs = processes;
-
-    let mut pgid = None;
-
-    for process in procs.iter_mut() {
-        
-
-        match unsafe{fork()}.expect("Fork failed") {
-            ForkResult::Parent { child } => {
-                process.set_pid(child);
-            },
-            ForkResult::Child => {
-                if pgid.is_none() {
-                    pgid = Some(getpid());
-                }
-                let pid = getpid();
-                setpgid(pid, pgid.unwrap()).unwrap();
-
-
-                //set env
-                //
-                //set assignments
-
-                match execv(&process.argv[0], &process.argv) {
-                    Ok(_) => {
-                        unreachable!();
-                    },
-                    Err(e) => {
-                        println!("Failed to execute: {}", e);
-                    }
-                }
-            }
-            
+fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
+    match unsafe {fork()}?{
+        ForkResult::Parent { child } => {
+            //need to add in logic for setting up jobs
+            command.set_pid(child);
+            return Ok(child);
+        },
+        ForkResult::Child => {
+            return Ok(Pid::from_raw(0));
         }
+    }
+}
 
+
+fn temp_exec(process: &mut Process) -> Result<i32,String> {
+
+    //set env
+    //
+    //set assignments
+
+    match execv(&process.argv[0], &process.argv) {
+        Ok(_) => {
+            unreachable!();
+        },
+        Err(e) => {
+            return Err(format!("Failed to execute: {}", e));
+        }
     }
 
-   Ok(Job::new(procs))
 }
 
 

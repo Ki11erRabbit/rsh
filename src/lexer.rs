@@ -156,16 +156,8 @@ impl<'input> Iterator for Lexer<'input> {
                     }
                 },
                 '=' => Some(Ok((start, Token::Equals, end))),
-                '"' => {
-                    let (word, end) = self.take_until_seen_twice(start, end, |c| c == '"');
-                    self.advance();
-                    Some(Ok((start, Token::Word(word), end)))
-                },
-                '\'' => {
-                    let (word, end) = self.take_until_seen_twice(start, end, |c| c == '\'');
-                    self.advance();
-                    Some(Ok((start, Token::Word(word), end)))
-                },
+                '"' => Some(self.double_quote(start, end)),
+                '\'' => Some(self.single_quote(start, end)),
                 '!' => Some(Ok((start, Token::Bang, end))),
                 chr if is_word_start(chr) => Some(self.word(start, end)),
                 chr if chr.is_whitespace() => continue,
@@ -235,6 +227,17 @@ impl<'input> Lexer<'input> {
         where F: FnMut(char) -> bool,
     {
         self.take_until(start, end, |c| !keep_going(c))
+    }
+
+    fn single_quote(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
+        let (word, end) = self.take_until(start, end, |c| c == '\'');
+        self.advance();
+        Ok((start, Token::Word(&word[1..]), end))
+    }
+    fn double_quote(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
+        let (word, end) = self.take_until(start, end, |c| c == '"');
+        self.advance();
+        Ok((start, Token::Word(&word[1..]), end))
     }
 
     fn newline_list(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
