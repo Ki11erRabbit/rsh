@@ -245,3 +245,123 @@ fn test_parser() {
         .unwrap();
     println!("{:#?}", ast);
 }
+
+#[test]
+fn test_parser_quote() {
+    let input = "echo \"Hello world\"";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_pipeline() {
+    let input = "echo Hello world | cat";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_pipeline_longer() {
+    let input = "echo Hello world | cat | wc";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_long_pipeline() {
+    let input = "echo Hello world | cat | wc | grep world";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_really_long_pipeline() {
+    let input = "echo Hello world | cat | wc | grep world";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_redirect() {
+    let input = "echo Hello world > file.txt";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_redirect_append() {
+    let input = "echo Hello world >> file.txt";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_redirect_input() {
+    let input = "cat < file.txt";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_redirect_pipe() {
+    let input = "cat < file.txt | wc";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_env_assignment() {
+    let input = "FOO=bar echo Hello world";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_env_assignment_pipe() {
+    let input = "FOO=bar echo Hello world | cat";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
+
+#[test]
+fn test_parser_env_assignment_redirect_pipe() {
+    let input = "FOO=bar echo Hello world > file.txt | cat";
+    let lexer = Lexer::new(input);
+    let ast = grammar::CompleteCommandParser::new()
+        .parse(input,lexer)
+        .unwrap();
+    println!("{:#?}", ast);
+}
