@@ -1,84 +1,148 @@
+use crate::{ast, lexer};
+use std::os::unix::io::RawFd;
 
 grammar<'input>(text: &'input str);
 
 extern {
-    type Error = lex::Error;
+    type Location = usize;
+    type Error = lexer::Error;
 
     enum lexer::Token<'input> {
-        "tab"           => Token::Tab,
-        "space"         => Token::Space,
-        "newline"       => Token::Newline,
-        "comment"       => Token::Comment,
-        "semicolon"     => Token::Semicolon,
-        "comma"         => Token::Comma,
-        "pipe"          => Token::Pipe,
-        "ampersand"     => Token::Ampersand,
-        "and"           => Token::And,
-        "or"            => Token::Or,
-        "equals"        => Token::Equals,
-        "bang"          => Token::Bang,
-        "open_paren"    => Token::OpenParen,
-        "close_paren"   => Token::CloseParen,
-        "open_brace"    => Token::OpenBrace,
-        "close_brace"   => Token::CloseBrace,
-        "greater"       => Token::Greater,
-        "less"          => Token::Less,
-        "double_greater"=> Token::DoubleGreater,
-        "double_less"   => Token::DoubleLess,
-        "dollar"        => Token::Dollar,
-        "greaterAnd"    => Token::GreaterAnd,
-        "lessAnd"       => Token::LessAnd,
-        "for"           => Token::For,
-        "in"            => Token::In,
-        "if"            => Token::If,
-        "else"          => Token::Else,
-        "elif"          => Token::Elif,
-        "while"         => Token::While,
-        "until"         => Token::Until,
-        "do"            => Token::Do,
-        "break"         => Token::Break,
-        "continue"      => Token::Continue,
-        "return"        => Token::Return,
-        "Word"          => Token::Word(<&'input str>),
-        "Number"        => Token::Number(<RawFd>),
-
+        "tab"           => lexer::Token::Tab,
+        "space"         => lexer::Token::Space,
+        "newline"       => lexer::Token::Newline,
+        "newline_list"  => lexer::Token::NewlineList,
+        "comment"       => lexer::Token::Comment,
+        "backtick"      => lexer::Token::BackTick,
+        ";"             => lexer::Token::SemiColon,
+        "pipe"          => lexer::Token::Pipe,
+        "&"             => lexer::Token::Ampersand,
+        "&&"            => lexer::Token::And,
+        "||"            => lexer::Token::Or,
+        "="             => lexer::Token::Equals,
+        "bang"          => lexer::Token::Bang,
+        "("             => lexer::Token::OpenParen,
+        ")"             => lexer::Token::CloseParen,
+        "{"             => lexer::Token::OpenBrace,
+        "}"             => lexer::Token::CloseBrace,
+        ">"             => lexer::Token::Greater,
+        "<"             => lexer::Token::Less,
+        ">>"            => lexer::Token::DoubleGreater,
+        "<<"            => lexer::Token::DoubleLess,
+        "$"             => lexer::Token::Dollar,
+        ">&"            => lexer::Token::GreaterAnd,
+        "<&"            => lexer::Token::LessAnd,
+        "for"           => lexer::Token::For,
+        "in"            => lexer::Token::In,
+        "if"            => lexer::Token::If,
+        "else"          => lexer::Token::Else,
+        "elif"          => lexer::Token::Elif,
+        "while"         => lexer::Token::While,
+        "until"         => lexer::Token::Until,
+        "do"            => lexer::Token::Do,
+        "done"          => lexer::Token::Done,
+        "case"          => lexer::Token::Case,
+        "esac"          => lexer::Token::Esac,
+        "break"         => lexer::Token::Break,
+        "continue"      => lexer::Token::Continue,
+        "return"        => lexer::Token::Return,
+        "EOF"           => lexer::Token::EOF,
+        "Word"          => lexer::Token::Word(<&'input str>),
+        "Number"        => lexer::Token::Number(<RawFd>),
     }
 }
 
+pub CompleteCommand: ast::CompleteCommand = {
+    <lst:List> <sep:Separator> => ast::CompleteCommand{list: lst},
+    <lst:List> => ast::CompleteCommand{list: lst},
+}
+
+List: ast::List = {
+    <list:List> <sepop:CmdSepOp> <and_or:AndOr> => {let mut nlist = list.clone(); nlist.push(and_or); nlist},
+    <and_or:AndOr> => ast::List(vec![and_or]),
+}
+
+AndOr: ast::AndOr = {
+    <pipeline:Pipeline> => ast::AndOr{and_or: None, conditional_exec: None, pipeline},
+    <and_or:AndOr> <op:"&&"> <pipeline:Pipeline> => ast::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(ast::ConditionalExec::And), pipeline},
+    <and_or:AndOr> <op:"&&"> <nl:"newline_list"> <pipeline:Pipeline> => ast::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(ast::ConditionalExec::And), pipeline},
+    <and_or:AndOr> <op:"||"> <pipeline:Pipeline> => ast::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(ast::ConditionalExec::Or), pipeline},
+    <and_or:AndOr> <op:"||"> <nl:"newline_list"> <pipeline:Pipeline> => ast::AndOr{and_or: Some(Box::new(and_or)), conditional_exec: Some(ast::ConditionalExec::Or), pipeline},
+}
+
+Pipeline: ast::Pipeline = {
+    <ps:PipelineSeq> => ast::Pipeline{bang: false, pipe_sequence: ps},
+    <bang:"bang"> <ps:PipelineSeq> => ast::Pipeline{bang: true, pipe_sequence: ps},
+}
+
+PipelineSeq: ast::PipeSequence = {
+    <cmd:Command> => ast::PipeSequence(vec![cmd]),
+    <ps:PipelineSeq> <op:"pipe"> <cmd:Command> => {let mut nps = ps.clone(); nps.push(cmd); nps},
+}
+
+Command: ast::Command = {
+    <cmd:SimpleCommand> => ast::Command::SimpleCommand(cmd),
+}
+
+SimpleCommand: ast::SimpleCommand = {
+    <cmdpf:Prefix> <cmd:CmdWord> <cmdsf:Suffix> => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: Some(cmdsf)},
+    <cmdpf:Prefix> <cmd:CmdWord>  => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: None},
+    <cmd:CmdName> <cmdsf:Suffix> => ast::SimpleCommand{prefix: None, name: cmd, suffix: Some(cmdsf)},
+    <cmd:CmdName> => ast::SimpleCommand{prefix: None, name: cmd, suffix: None},
+    <cmdpf:Prefix> => ast::SimpleCommand{prefix: Some(cmdpf), name: String::new(), suffix: None},
+}
+
+Prefix: ast::Prefix = {
+    <ior:IORedirect> => ast::Prefix{io_redirect: vec![ior], assignment: Vec::new()},
+    <cmdpf:Prefix> <ior:IORedirect> => {let mut ncmdpf = cmdpf.clone(); ncmdpf.io_redirect.push(ior); ncmdpf},
+    <word:Assignment> => ast::Prefix{io_redirect: Vec::new(), assignment: vec![word]},
+    <cmdpf:Prefix> <word:Assignment> => {let mut ncmdpf = cmdpf.clone(); ncmdpf.assignment.push(word); ncmdpf},
+}
+
+Suffix: ast::Suffix = {
+    <ior:IORedirect> => ast::Suffix{io_redirect: vec![ior], word: Vec::new()},
+    <cmdsf:Suffix> <ior:IORedirect> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.io_redirect.push(ior); ncmdsf},
+    <word:"Word"> => ast::Suffix{io_redirect: Vec::new(), word: vec![word.to_string()]},
+    <cmdsf:Suffix> <word:"Word"> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(word.to_string()); ncmdsf},
+}
+
+IORedirect: ast::IoRedirect = {
+    <iof:IOFile> => ast::IoRedirect{io_file: Some(iof), io_number: None, io_here: None},
+    <ion:"Number"> <iof:IOFile> => ast::IoRedirect{io_file: Some(iof), io_number: Some(ion), io_here: None},
+}
+
+IOFile: ast::IoFile = {
+    <op:"<"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Input, filename: word.to_string()},
+    <op:">"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Output, filename: word.to_string()},
+    <op:">>"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Append, filename: word.to_string()},
+}
 
 Assignment: String = {
-    <var:"Word"> <eq:"equals"> <val:Word> => {
+    <var:"Word"> <eq:"="> <val:"Word"> => {
         let mut s = String::from(var);
-        s.push_str(eq);
+        s.push_str("=");
         s.push_str(val);
         s
     }
 }
 
+CmdName: String = {
+    <cmd:"Word"> => cmd.to_string(),
+}
 
-SeparatorOp: String = {
-    <sep:"semicolon"> => String::from(sep),
-    <sep:"ampersand"> => String::from(sep),
+CmdWord: String = {
+    <word:"Word"> => word.to_string(),
+}
+
+CmdSepOp: String = {
+    <sep:";"> => ";".to_string(),
+    <sep:"&"> => "&".to_string(),
 }
 
 Separator: String = {
-    <op:SeparatorOp> => op,
-    <nl:NewlineList> => nl,
-}
-
-SequentialSeparator: String = {
-    <sep:"semicolon"> => String::from(sep),
-    <nl:NewlineList> => nl,
-}
-
-
-NewlineList: String = {
-    <nl:"newline"> => String::from(nl),
-    <nl:"newline"> <list:NewlineList> => {
-        let mut s = String::from(nl);
-        s.push_str(&list);
-        s
-    }
+    <sep:";"> => ";".to_string(),
+    <nl:"newline_list"> => "\n".to_string(),
+    <eof:"EOF"> => "".to_string(),
 }
 
 

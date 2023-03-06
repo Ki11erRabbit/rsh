@@ -1,10 +1,10 @@
 //mod shell;
-mod parser;
+//mod parser;
 mod lexer;
 mod ast;
-mod eval_alt;
-mod exec;
-mod process;
+//mod eval_alt;
+//mod exec;
+//mod process;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
@@ -48,7 +48,7 @@ fn main() {
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
 
-        let ast = parser::parse_input(&input).unwrap();
+        //let ast = parser::parse_input(&input).unwrap();
 
         //let result = eval::eval(&ast, 0, 1, 2);
     }
