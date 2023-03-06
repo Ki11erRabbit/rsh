@@ -8,6 +8,7 @@ use nix::errno::Errno;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::mem;
+use std::env;
 
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
@@ -104,7 +105,8 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                 }
 
                 eval_prefix_suffix(commands[count].prefix_suffix());
-
+                
+                println!("executing: {:?}", process.argv);
                 temp_exec(process).unwrap();
                 unreachable!();
             }
@@ -166,10 +168,17 @@ fn eval_prefix_suffix(prefix_suffix: (Option<&Prefix>, Option<&Suffix>)) {
     let (prefix, suffix) = prefix_suffix;
     if prefix.is_some() {
         eval_redirect(&prefix.unwrap().io_redirect);
-
+        eval_assignment(&prefix.unwrap().assignment);
     }
     if suffix.is_some() {
         eval_redirect(&suffix.unwrap().io_redirect);
+    }
+}
+
+fn eval_assignment(assignment: &Vec<String>) {
+    for assign in assignment.iter() {
+        let assign = assign.split('=').collect::<Vec<&str>>();
+        env::set_var(&assign[0], &assign[1]);
     }
 }
 

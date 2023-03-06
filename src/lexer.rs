@@ -294,7 +294,7 @@ fn is_word_start(chr: char) -> bool {
 
 fn is_word_continue(chr: char) -> bool {
     match chr {
-        ';' | '&' | '|' | '(' | ')' | '{' | '}' | '<' | '>' | '!' | '$' | '`' | '*'  => false,
+        ';' | '&' | '|' | '(' | ')' | '{' | '}' | '<' | '>' | '!' | '$' | '`' | '*' | '=' => false,
         _ => !chr.is_whitespace(),
     }
 }
