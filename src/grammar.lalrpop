@@ -58,7 +58,11 @@ pub CompleteCommand: ast::CompleteCommand = {
 }
 
 List: ast::List = {
-    <list:List> <sepop:CmdSepOp> <and_or:AndOr> => {let mut nlist = list.clone(); nlist.push(and_or); nlist},
+    <list:List> <sepop:CmdSepOp> <and_or:AndOr> => {
+                                let mut nlist = list.clone(); 
+                                nlist.push(and_or); 
+                                nlist
+                        },
     <and_or:AndOr> => ast::List(vec![and_or]),
 }
 
@@ -71,8 +75,10 @@ AndOr: ast::AndOr = {
 }
 
 Pipeline: ast::Pipeline = {
-    <ps:PipelineSeq> => ast::Pipeline{bang: false, pipe_sequence: ps},
-    <bang:"bang"> <ps:PipelineSeq> => ast::Pipeline{bang: true, pipe_sequence: ps},
+    <ps:PipelineSeq> => ast::Pipeline{bang: false, pipe_sequence: ps, background: false},
+    <bang:"bang"> <ps:PipelineSeq> => ast::Pipeline{bang: true, pipe_sequence: ps, background: false},
+    <ps:PipelineSeq> <op:CmdBackgroundOp> => ast::Pipeline{bang: false, pipe_sequence: ps, background: true},
+    <bang:"bang"> <ps:PipelineSeq> <op:CmdBackgroundOp> => ast::Pipeline{bang: true, pipe_sequence: ps, background: false},
 }
 
 PipelineSeq: ast::PipeSequence = {
@@ -136,6 +142,8 @@ CmdWord: String = {
 
 CmdSepOp: String = {
     <sep:";"> => ";".to_string(),
+}
+CmdBackgroundOp: String = {
     <sep:"&"> => "&".to_string(),
 }
 

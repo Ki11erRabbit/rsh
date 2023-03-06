@@ -43,6 +43,7 @@ pub struct AndOr {
 pub struct Pipeline {
     pub bang: bool,
     pub pipe_sequence: PipeSequence,
+    pub background: bool,
 }
 
 #[derive(Debug,Clone,PartialEq)]
