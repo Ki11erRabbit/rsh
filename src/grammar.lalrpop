@@ -53,8 +53,9 @@ extern {
 }
 
 pub CompleteCommand: ast::CompleteCommand = {
-    <lst:List> <sep:Separator> => ast::CompleteCommand{list: lst},
-    <lst:List> => ast::CompleteCommand{list: lst},
+    <lst:List> <sep:Separator> => ast::CompleteCommand{list: Some(lst)},
+    <lst:List> => ast::CompleteCommand{list: Some(lst)},
+    <sep:Separator> => ast::CompleteCommand{list: None},
 }
 
 List: ast::List = {

@@ -5,7 +5,7 @@ use std::ffi::CString;
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct CompleteCommand {
-    pub list: List,
+    pub list: Option<List>,
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -199,6 +199,26 @@ impl SimpleCommand {
         }
 
         argv
+    }
+
+    pub fn cmd(&self) -> String {
+        let mut cmd = String::new();
+        cmd.push_str(&self.name);
+
+        if self.suffix.is_some() {
+            for word in self.suffix.as_ref().unwrap().word.iter() {
+                cmd.push_str(" ");
+                cmd.push_str(&word);
+            }
+        }
+
+        cmd
+    }
+
+    pub fn prefix_suffix(&self) -> (Option<&Prefix>, Option<&Suffix>) {
+        let prefix = self.prefix.as_ref();
+        let suffix = self.suffix.as_ref();
+        (prefix, suffix)
     }
 }
 

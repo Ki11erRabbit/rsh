@@ -1,4 +1,4 @@
-//mod shell;
+mod shell;
 //mod parser;
 mod lexer;
 mod ast;
@@ -27,6 +27,11 @@ fn sig_int_handler() {
     }
 }
 
+fn sig_child_handler() {
+    println!("SIGCHILD");
+    shell::display_jobs();
+}
+
 
 static mut NAME: i32 = 42;
 
@@ -37,12 +42,16 @@ fn main() {
     }
 
 
+
     while unsafe {NAME == 42} {
         println!("Looping");
         sleep(std::time::Duration::from_secs(1));
     }
     println!("Hello, world!");*/
 
+    unsafe {
+        signal_hook::low_level::register(17, sig_child_handler).unwrap();
+    }
 
     loop {
         print!("$ ");
@@ -51,9 +60,9 @@ fn main() {
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
 
-        if input.as_str() == "\n" {
+        /*if input.as_str() == "\n" {
             continue;
-        }
+        }*/
 
         let lexer = Lexer::new(&input);        
         let ast = grammar::CompleteCommandParser::new()

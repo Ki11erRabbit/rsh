@@ -3,21 +3,25 @@ use crate::jobs::Process;
 use std::ffi::CString;
 use crate::jobs::Job;
 use crate::builtins;
-
+use crate::shell;
 use nix::errno::Errno;
+use std::fs::OpenOptions;
+use std::os::unix::io::AsRawFd;
+use std::mem;
 
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
 use nix::sys::wait::wait;
 
 
-
-
-
-
 pub fn eval(ast: &CompleteCommand) -> Result<i32,&'static str> {
 
-    let result = parse_tree(&ast.list)?;
+    let list = match &ast.list {
+        Some(list) => list,
+        None => return Ok(0),
+    };
+
+    let result = parse_tree(list)?;
 
     Ok(result)
 }
@@ -33,9 +37,11 @@ fn parse_tree(list: &List) -> Result<i32,&'static str> {
 
 fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
+    let background = pipeline.background;
     let pipeline: &PipeSequence = &pipeline.pipe_sequence;
     
-    let mut processes: Vec<Process> = Vec::new();
+    let mut processes = Vec::new();
+    let mut commands = Vec::new();
 
     //block interrupts
     for command in pipeline.iter() {
@@ -44,21 +50,30 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
             break;   
         }
         else {
-            processes.push(process.unwrap());
+            let (process, smc) = process.unwrap();
+            processes.push(process);
+            commands.push(smc);
         }
     }
     
-    //make job
+    if processes.len() == 0 {
+        return Ok(0);
+    }
+    let proc_count;
+    // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
+    {
+        let job = shell::create_job(processes, background);
+        let mut job = job.borrow_mut();
+        let procs = job.borrow_processes_mut();
 
-    if processes.len() > 0 {
-        
+            
         let mut pgid = None;
 
         let mut pip: (RawFd,RawFd) = (-1,-1);
         let mut prev_fd: RawFd = -1;
         let mut count: usize = 0;
-        let proc_count = processes.len();
-        for process in processes.iter_mut() {
+        proc_count = procs.len();
+        for process in procs.iter_mut() {
             pip.1 = -1;
             if count < proc_count - 1 {
                 let pipe_result = pipe();
@@ -88,6 +103,8 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                     close(pip.1).unwrap();
                 }
 
+                eval_prefix_suffix(commands[count].prefix_suffix());
+
                 temp_exec(process).unwrap();
                 unreachable!();
             }
@@ -102,22 +119,22 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
             count += 1;
         }
-
-
-
-
-        //let job = temp_exec(processes)?;
-
-        for _ in 0..proc_count {
-            wait().unwrap();
-        }
     }
+
+    //let job = temp_exec(processes)?;
+
+    for _ in 0..proc_count {
+        wait().unwrap();
+    }
+    
+    //unblock interrupts
 
 
     Ok(0)
 }
 
-fn eval_command(command: &Command) -> Result<Option<Process>,&'static str> {
+
+fn eval_command(command: &Command) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
 
     match command {
         Command::SimpleCommand(simple_command) => {
@@ -131,20 +148,70 @@ fn eval_command(command: &Command) -> Result<Option<Process>,&'static str> {
 
 }
 
-fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Option<Process>,&'static str> {
+fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
    
     if check_if_builtin(&simple_command.name) {
         return eval_builtin(simple_command);
     }
 
-
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
 
-    let process = Process::new(argv);
+    let process = Process::new(argv,simple_command.cmd());
 
-    Ok(Some(process))
+    Ok(Some((process,simple_command.clone())))// this clone is bad and should be replaced
 }
+
+fn eval_prefix_suffix(prefix_suffix: (Option<&Prefix>, Option<&Suffix>)) {
+    let (prefix, suffix) = prefix_suffix;
+    if prefix.is_some() {
+        eval_redirect(&prefix.unwrap().io_redirect);
+
+    }
+    if suffix.is_some() {
+        eval_redirect(&suffix.unwrap().io_redirect);
+    }
+}
+
+fn eval_redirect(redirect: &Vec<IoRedirect>) {
+    for redir in redirect.iter() {
+        if redir.io_file.is_some() {
+            let io_file = redir.io_file.as_ref().unwrap();
+            match &io_file.redirect_type {
+                RedirectType::Input => {
+                    let file = OpenOptions::new()
+                        .read(true)
+                        .open(&io_file.filename)
+                        .unwrap();
+                    
+                    dup2(file.as_raw_fd(), 0).unwrap();
+                    mem::forget(file);
+                },
+                RedirectType::Output => {
+                    let file = OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .open(&io_file.filename)
+                        .unwrap();
+                    dup2(file.as_raw_fd(), 1).unwrap();
+                    mem::forget(file);
+                },
+                RedirectType::Append => {
+                    let file = OpenOptions::new()
+                        .write(true)
+                        .append(true)
+                        .create(true)
+                        .open(&io_file.filename)
+                        .unwrap();
+                    dup2(file.as_raw_fd(), 1).unwrap();
+                    mem::forget(file);
+                },
+                _ => (),
+            }
+        }
+    }
+}
+
 
 fn check_if_builtin(cmd_name: &str) -> bool {
     match cmd_name {
@@ -154,7 +221,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
     }
 }
 
-fn eval_builtin(command: &SimpleCommand) -> Result<Option<Process>,&'static str> {
+fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
     match command.name.as_str() {
         "cd" => {
             builtins::change_directory(command).unwrap();//TODO: properly handle error
