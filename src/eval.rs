@@ -62,8 +62,8 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
     }
     let proc_count;
     // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
-    {
         let job = shell::create_job(processes, background);
+    {
         let mut job = job.borrow_mut();
         let procs = job.borrow_processes_mut();
 
@@ -89,7 +89,9 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                     pgid = Some(getpid());
                 }
                 let pid = getpid();
-                setpgid(pid, pgid.unwrap()).unwrap();
+                if background {
+                    setpgid(pid, pgid.unwrap()).unwrap();
+                }
 
                 //unblock interrupts
                 if pip.1 >= 0 {
@@ -121,13 +123,19 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
             count += 1;
         }
+        
+        if !background {
+            for _ in 0..proc_count {
+                match wait() {
+                    Ok(_) => {},
+                    Err(_) => {}
+                }
+            }
+        }
     }
 
     //let job = temp_exec(processes)?;
 
-    for _ in 0..proc_count {
-        wait().unwrap();
-    }
     
     //unblock interrupts
 

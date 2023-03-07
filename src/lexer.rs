@@ -277,10 +277,15 @@ impl<'input> Lexer<'input> {
     }
 
     fn num_or_word(&self, word: &'input str) -> Token<'input> {
-        match word.parse::<i32>() {
-            Ok(num) => Token::Number(num),
-            Err(_) => Token::Word(word),
+        if let Some((_,chr,_)) = self.lookahead {
+            if chr == '<' || chr == '>' {
+                match word.parse::<i32>() {
+                    Ok(num) => return Token::Number(num),
+                    Err(_) => return Token::Word(word),
+                }
+            }
         }
+        Token::Word(word)
     }
 }
 

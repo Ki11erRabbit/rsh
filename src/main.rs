@@ -5,6 +5,7 @@ mod ast;
 mod eval;
 mod jobs;
 mod builtins;
+mod trap;
 //mod eval_alt;
 //mod exec;
 //mod process;
@@ -14,51 +15,26 @@ use lexer::Lexer;
 use std::io::{self, Write};
 
 
-use std::thread::sleep;
-
-use signal_hook::{iterator::Signals};
 
 lalrpop_mod!(pub grammar);
 
-fn sig_int_handler() {
-        sleep(std::time::Duration::from_secs(4));
-    unsafe {
-        NAME = 0;
-    }
-}
-
-fn sig_child_handler() {
-    println!("SIGCHILD");
-    shell::display_jobs();
-}
-
-
-static mut NAME: i32 = 42;
 
 
 fn main() {
-    /*unsafe {
-        signal_hook::low_level::register(2, sig_int_handler).unwrap();
-    }
-
-
-
-    while unsafe {NAME == 42} {
-        println!("Looping");
-        sleep(std::time::Duration::from_secs(1));
-    }
-    println!("Hello, world!");*/
-
-    unsafe {
-        signal_hook::low_level::register(17, sig_child_handler).unwrap();
-    }
-
+   
+    trap::set_signal(17);
+    trap::set_signal(20);
+    trap::set_signal(2);
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
 
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
+
+        if input.len() == 0 {
+            break;
+        }
 
         /*if input.as_str() == "\n" {
             continue;
