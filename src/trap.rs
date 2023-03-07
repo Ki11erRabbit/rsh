@@ -22,7 +22,6 @@ static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
 
 
 extern "C" fn on_sig(sig_num: c_int) {
-    println!("got signal {}", sig_num);
     if shell::vforked() {
         return;
     }
@@ -43,6 +42,8 @@ extern "C" fn on_sig(sig_num: c_int) {
 
 
     if sig_num == signal::SIGINT as c_int && !shell::is_trap_set(signal::SIGINT) {
+        nix::unistd::write(0,&[0xA as u8]).unwrap();
+        //io::stdin().read_line(&mut String::new()).unwrap();
         unsafe {
             if !SUPRESS_SIGINT.load(Ordering::Relaxed) {
                 on_sigint();
@@ -78,6 +79,7 @@ fn sig_chld() {
 
                     let msg = format!("Job [{}] ({}) terminated by signal {}",job.job_id, pid, signal);
                     std::io::stdout().write_all(&msg.as_bytes()).unwrap();
+                    std::io::stdout().flush().unwrap();
                     //job.state = JobState::Finished;
                 }
                 
@@ -99,6 +101,7 @@ fn sig_chld() {
 
                     let msg = format!("Job [{}] ({}) stopped by signal {}",job.job_id, pid, signal);
                     std::io::stdout().write_all(&msg.as_bytes()).unwrap();
+                    std::io::stdout().flush().unwrap();
                     job.state = JobState::Stopped;
                 }
                 //update job list
@@ -139,7 +142,6 @@ fn sigclearmask() {
 
 
 pub fn set_signal(sig_num: c_int) {
-    println!("setting signal {}", sig_num);
     let sig_handler;
     let mut action;
 
@@ -216,7 +218,6 @@ pub fn set_signal(sig_num: c_int) {
 
     match action {
         S_CATCH => {
-            println!("setting sig handler");
             sig_handler = signal::SigHandler::Handler(on_sig);
         },
         S_IGN => {

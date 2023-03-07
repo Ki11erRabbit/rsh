@@ -12,6 +12,8 @@ likely_stable = "0.1.2"
 signal-hook = "0.3.15"
 lalrpop-util = "0.19.8"
 regex = "1.7.1"
+fragile = "2.0.0"
+rustyline = "5.0.2"
 
 [build-dependencies]
 lalrpop = "0.19.8"

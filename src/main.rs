@@ -13,11 +13,16 @@ use lalrpop_util::lalrpop_mod;
 
 use lexer::Lexer;
 use std::io::{self, Write};
-
+use std::io::BufReader;
+use std::fs::File;
+use std::io::prelude::*;
 
 
 lalrpop_mod!(pub grammar);
 
+
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 
 fn main() {
@@ -26,11 +31,34 @@ fn main() {
     trap::set_signal(20);
     trap::set_signal(2);
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+        //print!("$ ");
+        //io::stdout().flush().unwrap();
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
+        //let mut buf_reader = BufReader::new(io::stdin());
+        //buf_reader.read_line(&mut input).unwrap();
+        //io::stdin().read_line(&mut input).unwrap();
+
+        let mut rl = Editor::<()>::new();
+        //load history
+
+        let readline = rl.readline("$ ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                input = line;
+            },
+            Err(ReadlineError::Interrupted) => {
+                continue;
+            },
+            Err(ReadlineError::Eof) => {
+                break;
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
+        }
 
         if input.len() == 0 {
             break;

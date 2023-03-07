@@ -5,6 +5,7 @@ use crate::jobs::Job;
 use crate::builtins;
 use crate::shell;
 use nix::errno::Errno;
+use std::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::mem;
@@ -108,8 +109,14 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
                 eval_prefix_suffix(commands[count].prefix_suffix());
                 
-                println!("executing: {:?}", process.argv);
-                temp_exec(process).unwrap();
+                //println!("executing: {:?}", process.argv);
+                match temp_exec(process) {
+                    Ok(_) => {},
+                    Err(_) => {
+                        eprintln!("{}: Command not found\n", process.cmd);
+                        std::process::exit(1);
+                    },
+                }
                 unreachable!();
             }
             if prev_fd >= 0 {
@@ -131,6 +138,9 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                     Err(_) => {}
                 }
             }
+        }
+        else {
+            println!("[{}] ({}) {}", job.job_id, job.processes[0].pid, job);
         }
     }
 
