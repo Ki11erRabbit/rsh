@@ -10,7 +10,7 @@ use nix::unistd::{getpid, getcwd};
 use nix::sys::signal::Signal;
 use std::os::raw::c_int;
 use rustyline::Editor;
-use crate::var::VarData;
+use crate::var::{VarData, VarDataUtils};
 
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
@@ -24,6 +24,8 @@ pub trait ShellUtils<I> {
 
 
 pub struct Shell {
+    interactive:bool,
+    script_name: String,
     // variables
     //local_vars: HashMap<String, String>,
     //local_var_stack: Vec<HashMap<String, String>>,
@@ -56,6 +58,8 @@ pub struct Shell {
 impl Shell {
     pub fn new() -> Self {
         Self {
+            script_name: "rsh".to_string(),
+            interactive: true,
             var_data: VarData::new(),
             curr_directory: String::new(),
             physical_directory: getcwd().unwrap(),
@@ -110,6 +114,10 @@ impl Shell {
 
     pub fn lookup_command(&self, command: &str) -> Option<String> {
         self.var_data.lookup_command(command)
+    }
+
+    pub fn add_var(&mut self, set: &str, position: isize) {
+        self.var_data.add_var(set, position);
     }
 }
 
@@ -232,3 +240,41 @@ pub fn lookup_command(command: &str) -> Option<String> {
     let shell = SHELL.get().borrow();
     shell.lookup_command(command)
 }
+
+pub fn is_interactive() -> bool {
+    let shell = SHELL.get().borrow();
+    shell.interactive
+}
+pub fn set_interactive(interactive: bool) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.interactive = interactive;
+}
+pub fn set_script_name(script_name: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.script_name = script_name.to_string();
+    shell.interactive = false;
+}
+pub fn get_script_name() -> String {
+    let shell = SHELL.get().borrow();
+    shell.script_name.clone()
+}
+
+pub fn set_input_args(arg: &str, index: usize) {
+    let mut shell = SHELL.get().borrow_mut();
+
+    let set = format!("{}={}", index, arg);
+
+    shell.add_var(&set,0);
+
+} 
+    
+
+pub fn set_arg_0() {
+    let mut shell = SHELL.get().borrow_mut();
+    let set = format!("0={}", shell.script_name);
+
+    shell.add_var(&set,0);
+}
+
+
+

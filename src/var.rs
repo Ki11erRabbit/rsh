@@ -146,8 +146,18 @@ impl VarDataUtils<&str> for VarData {
         };
 
         let var_struct = Var::new(name, value);
-     
-        self.add_var(var, var_struct, pos);
+    
+        let key = if var.chars().nth(0).unwrap().to_digit(10).is_some() {
+            var.chars().filter(|c| {
+                (*c == '0') | (*c == '1') | (*c == '2') | (*c == '3') | (*c == '4') | (*c == '5') | (*c == '6') | (*c == '7') | (*c == '8') | (*c == '9')
+            }).collect::<String>().parse::<usize>().unwrap().to_string()
+        }
+        else {
+            var.to_string()
+        };
+
+
+        self.add_var(&key, var_struct, pos);
     } 
 
     
@@ -163,7 +173,18 @@ impl VarDataUtils<(&str, &str)> for VarData {
 
     fn add_var(&mut self, (name, value): (&str, &str), pos: isize) {
         let var_struct = Var::new(name, value);
-        self.add_var(name, var_struct, pos);
+
+        let key = if name.chars().nth(0).unwrap().to_digit(10).is_some() {
+            name.chars().filter(|c| {
+                (*c == '0') | (*c == '1') | (*c == '2') | (*c == '3') | (*c == '4') | (*c == '5') | (*c == '6') | (*c == '7') | (*c == '8') | (*c == '9')
+            }).collect::<String>().parse::<usize>().unwrap().to_string()
+        }
+        else {
+            name.to_string()
+        };
+
+
+        self.add_var(&key, var_struct, pos);
     }
 }
 
