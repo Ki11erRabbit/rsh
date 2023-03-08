@@ -111,6 +111,8 @@ Suffix: ast::Suffix = {
     <cmdsf:Suffix> <ior:IORedirect> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.io_redirect.push(ior); ncmdsf},
     <word:"Word"> => ast::Suffix{io_redirect: Vec::new(), word: vec![word.to_string()]},
     <cmdsf:Suffix> <word:"Word"> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(word.to_string()); ncmdsf},
+    <asm:Assignment> => ast::Suffix{io_redirect: Vec::new(), word: vec![asm]},
+    <cmdsf:Suffix> <asm:Assignment> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(asm); ncmdsf},
 }
 
 IORedirect: ast::IoRedirect = {

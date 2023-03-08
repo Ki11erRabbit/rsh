@@ -25,9 +25,10 @@ pub trait ShellUtils<I> {
 
 pub struct Shell {
     // variables
-    local_vars: HashMap<String, String>,
-    local_var_stack: Vec<HashMap<String, String>>,
-    var_table: BTreeMap<String, String>,
+    //local_vars: HashMap<String, String>,
+    //local_var_stack: Vec<HashMap<String, String>>,
+    //var_table: BTreeMap<String, String>,
+    var_data: VarData,
     // directory
     curr_directory: String,
     physical_directory: PathBuf,
@@ -55,9 +56,7 @@ pub struct Shell {
 impl Shell {
     pub fn new() -> Self {
         Self {
-            local_vars: HashMap::new(),
-            local_var_stack: Vec::new(),
-            var_table: BTreeMap::new(),
+            var_data: VarData::new(),
             curr_directory: String::new(),
             physical_directory: getcwd().unwrap(),
             jobctl: false,
@@ -107,6 +106,10 @@ impl Shell {
 
     pub fn get_current_job(&self) -> Option<Rc<RefCell<Job>>> {
         self.job_control.get_current_job()
+    }
+
+    pub fn lookup_command(&self, command: &str) -> Option<String> {
+        self.var_data.lookup_command(command)
     }
 }
 
@@ -223,4 +226,9 @@ pub fn set_got_sig(sig_num: c_int) {
 pub fn set_pending_signal(sig_num: c_int) {
     let mut shell = SHELL.get().borrow_mut();
     shell.pending_signal = Some(Signal::try_from(sig_num).unwrap());
+}
+
+pub fn lookup_command(command: &str) -> Option<String> {
+    let shell = SHELL.get().borrow();
+    shell.lookup_command(command)
 }

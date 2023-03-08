@@ -177,7 +177,7 @@ fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Option<(Process
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
 
-    let process = Process::new(argv,simple_command.cmd());
+    let process = Process::new(argv,simple_command.name.clone(),simple_command.cmd());
 
     Ok(Some((process,simple_command.clone())))// this clone is bad and should be replaced
 }
@@ -283,8 +283,13 @@ fn temp_exec(process: &mut Process) -> Result<i32,String> {
     //set env
     //
     //set assignments
+   
+    let argv0 = shell::lookup_command(&process.argv0).unwrap();//TODO: handle error
 
-    match execv(&process.argv[0], &process.argv) {
+    let command = CString::new(argv0).unwrap();
+
+
+    match execv(&command, &process.argv) {
         Ok(_) => {
             unreachable!();
         },

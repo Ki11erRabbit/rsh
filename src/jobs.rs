@@ -142,6 +142,7 @@ pub enum JobState {
 pub struct Process {
     pub pid: Pid,
     pub argv: Vec<CString>,
+    pub argv0: String,
     pub cmd: String,
 }
 
@@ -152,8 +153,8 @@ impl PartialEq for Process {
 }
 
 impl Process {
-    pub fn new(argv: Vec<CString>, cmd: String) -> Self {
-        Self { pid: Pid::from_raw(-1), argv, cmd }
+    pub fn new(argv: Vec<CString>, argv0: String ,cmd: String) -> Self {
+        Self { pid: Pid::from_raw(-1), argv, argv0 ,cmd }
     }
 
     pub fn set_pid(&mut self, pid: Pid) {
