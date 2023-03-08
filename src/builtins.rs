@@ -1,5 +1,6 @@
 use std::env;
 use crate::ast::SimpleCommand;
+use crate::shell;
 
 
 
@@ -20,6 +21,7 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
 }
 
 pub fn quit() -> Result<(), std::io::Error> {
+    shell::save_history();
     std::process::exit(0);
 }
 

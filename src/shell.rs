@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use crate::jobs::{Job, Process};
+use crate::jobs::{Job, Process, JobControl, JobUtils, JobId};
 use nix::unistd::Pid;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -9,9 +9,16 @@ use lazy_static::lazy_static;
 use nix::unistd::{getpid, getcwd};
 use nix::sys::signal::Signal;
 use std::os::raw::c_int;
+use rustyline::Editor;
 
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
+}
+
+
+pub trait ShellUtils<I> {
+    fn delete_job(&mut self, job: I);
+    fn get_job(&self, id: I) -> Option<Rc<RefCell<Job>>>;
 }
 
 
@@ -29,8 +36,7 @@ pub struct Shell {
     background_pid: Pid,
     vforked: bool,
     tty_fd: i32,
-    job_table: Vec<Rc<RefCell<Job>>>,
-    current_job: Option<usize>,
+    job_control: JobControl,
     traps: HashMap<Signal, String>,
     signal_mode: HashMap<Signal, usize>,//values are S_DFL, S_CATCH, S_IGN, S_HARD_IGN, S_RESET which are defined in trap.rs
     got_sig: Vec<bool>,
@@ -41,6 +47,8 @@ pub struct Shell {
     //misc
     root_pid: Pid,
     path: String,
+    readline: Rc<RefCell<Editor<()>>>,
+    history_location: String,
 }
 
 impl Shell {
@@ -56,103 +64,125 @@ impl Shell {
             background_pid: Pid::from_raw(-1),
             vforked: false,
             tty_fd: -1,
-            job_table: Vec::new(),
-            current_job: None,
+            job_control: JobControl::new(),
             root_pid: getpid(),
             path: String::new(),
             traps: HashMap::new(),
             got_sig: vec![false; 32],
             pending_signal: None,
             signal_mode: HashMap::new(),
+            readline: Rc::new(RefCell::new(Editor::<()>::new())),
+            history_location: String::new(),
+        }
+    } 
+
+    pub fn get_readline(&self) -> Rc<RefCell<Editor<()>>> {
+        self.readline.clone()
+    }
+
+    pub fn load_history(&self) {
+        if self.readline.borrow_mut().load_history(&self.history_location).is_err() {
+            eprintln!("No previous history.");
         }
     }
 
-    pub fn delete_job_pid(&mut self, pid: Pid) {
-        let mut index = 0;
-        'out: for job in &mut self.job_table {
-            for process in &job.borrow().processes {
-                if process.pid == pid {
-                    break 'out;
-                }
-            }
-            index += 1;
-        }
-        self.job_table.remove(index);
-        if self.current_job == Some(index) {
-            self.current_job = None;
+    pub fn save_history(&self) {
+        if self.readline.borrow_mut().save_history(&self.history_location).is_err() {
+            eprintln!("Could not save history.");
         }
     }
+
+    pub fn set_history_location(&mut self, location: &str) {
+        self.history_location = location.to_string();
+    }
+
+    pub fn create_job(&mut self, processes: Vec<Process>, background: bool) -> Rc<RefCell<Job>> {
+        self.job_control.create_job(processes, background)
+    }
+
+    pub fn display_jobs(&self) -> String {
+        format!("{}",self.job_control)
+    }
+
+    pub fn get_current_job(&self) -> Option<Rc<RefCell<Job>>> {
+        self.job_control.get_current_job()
+    }
+}
+
+impl ShellUtils<Pid> for Shell {
+    fn delete_job(&mut self, pid: Pid) {
+        self.job_control.delete_job(pid);
+    }
+
+    fn get_job(&self, pid: Pid) -> Option<Rc<RefCell<Job>>> {
+        self.job_control.get_job(pid)
+    }
+}
+
+impl ShellUtils<JobId> for Shell {
+    fn delete_job(&mut self, id: JobId) {
+        self.job_control.delete_job(id);
+    }
+
+    fn get_job(&self, id: JobId) -> Option<Rc<RefCell<Job>>> {
+        self.job_control.get_job(id)
+    }
+}
+
+pub fn save_history() {
+    let shell = SHELL.get().borrow();
+    shell.save_history();
+}
+
+pub fn load_history() {
+    let shell = SHELL.get().borrow();
+    shell.load_history();
+}
+
+pub fn set_history_location(location: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.set_history_location(location);
+}
+
+pub fn get_readline() -> Rc<RefCell<Editor<()>>> {
+    let shell = SHELL.get().borrow();
+    shell.get_readline()
 }
 
 
 pub fn create_job(processes: Vec<Process>, background: bool) -> Rc<RefCell<Job>> {
-    let job = Job::new(processes, background);
-
     let mut shell = SHELL.get().borrow_mut();
-
-    if background {
-        shell.jobctl = true;
-    }
-
-    shell.job_table.push(Rc::new(RefCell::new(job)));
-
-    shell.current_job = Some(shell.job_table.len() - 1);
-
-    shell.job_table.last().unwrap().clone() 
+    shell.create_job(processes, background)
 }
 
-pub fn get_job(pid: Pid) -> Option<Rc<RefCell<Job>>> {
+
+pub fn get_job<T>(id: T) -> Option<Rc<RefCell<Job>>>
+where
+    Shell: ShellUtils<T>,
+{
     let shell = SHELL.get().borrow();
-    for job in &shell.job_table {
-        for process in &job.borrow().processes {
-            if process.pid == pid {
-                return Some(job.clone());
-            }
-        }
-    }
-    None
+    shell.get_job(id)
 }
 
-pub fn delete_job(job: Rc<RefCell<Job>>) {
+pub fn delete_job<T>(id: T)
+where
+    Shell: ShellUtils<T>,
+{
     let mut shell = SHELL.get().borrow_mut();
-    let mut index = 0;
-    for j in &shell.job_table {
-        if Rc::ptr_eq(&j, &job) {
-            shell.job_table.remove(index);
-            if shell.current_job == Some(index) {
-                shell.current_job = None;
-            }
-            return;
-        }
-        index += 1;
-    }
+    shell.delete_job(id);
 }
 
-pub fn delete_job_pid(pid: Pid) {
-    let mut shell = SHELL.get().borrow_mut();
-    shell.delete_job_pid(pid);
-}
+
 
 pub fn display_jobs() -> String {
     let shell = SHELL.get().borrow();
-    let mut output = String::new();
-    for job in &shell.job_table {
-        output.push_str(&job.borrow().to_string());
-    }
-    output
+    shell.display_jobs()
 }
 
 
 pub fn get_current_job() -> Option<Rc<RefCell<Job>>> {
-    println!("get current job");
     let shell = SHELL.get().borrow();
-
-    println!("shell current job: {:?}", shell.current_job);
-    if let Some(index) = shell.current_job {
-        Some(shell.job_table[index].clone())
-    } else {
-        None
-    }
+    shell.get_current_job()
 }
 
 pub fn is_trap_set(signal: Signal) -> bool {

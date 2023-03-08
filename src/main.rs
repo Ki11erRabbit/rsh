@@ -12,10 +12,6 @@ mod trap;
 use lalrpop_util::lalrpop_mod;
 
 use lexer::Lexer;
-use std::io::{self, Write};
-use std::io::BufReader;
-use std::fs::File;
-use std::io::prelude::*;
 
 
 lalrpop_mod!(pub grammar);
@@ -30,6 +26,11 @@ fn main() {
     trap::set_signal(17);
     trap::set_signal(20);
     trap::set_signal(2);
+
+    shell::set_history_location("history.txt");
+
+    let mut rl = shell::get_readline();
+
     loop {
         //print!("$ ");
         //io::stdout().flush().unwrap();
@@ -39,13 +40,12 @@ fn main() {
         //buf_reader.read_line(&mut input).unwrap();
         //io::stdin().read_line(&mut input).unwrap();
 
-        let mut rl = Editor::<()>::new();
         //load history
 
-        let readline = rl.readline("$ ");
+        let readline = rl.borrow_mut().readline("$ ");
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str());
+                rl.borrow_mut().add_history_entry(line.as_str());
                 input = line;
             },
             Err(ReadlineError::Interrupted) => {
@@ -55,7 +55,7 @@ fn main() {
                 break;
             },
             Err(err) => {
-                println!("Error: {:?}", err);
+                println!("Redline Error: {:?}", err);
                 break;
             }
         }
@@ -79,4 +79,6 @@ fn main() {
 
         //let result = eval::eval(&ast, 0, 1, 2);
     }
+
+    shell::save_history();
 }

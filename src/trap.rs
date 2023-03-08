@@ -63,7 +63,7 @@ fn sig_chld() {
     loop {
         match waitpid(child_pid, Some(flag)) {
             Ok(WaitStatus::Exited(pid, status)) => {
-                shell::delete_job_pid(pid);
+                shell::delete_job(pid);
             },
             Ok(WaitStatus::Signaled(pid, signal, _)) => {
                 let job = shell::get_job(pid);
@@ -83,7 +83,7 @@ fn sig_chld() {
                     //job.state = JobState::Finished;
                 }
                 
-                shell::delete_job_pid(pid);
+                shell::delete_job(pid);
                 
                 //remove from job list
             },
