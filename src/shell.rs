@@ -10,6 +10,7 @@ use nix::unistd::{getpid, getcwd};
 use nix::sys::signal::Signal;
 use std::os::raw::c_int;
 use rustyline::Editor;
+use crate::var::VarData;
 
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
@@ -155,7 +156,7 @@ pub fn create_job(processes: Vec<Process>, background: bool) -> Rc<RefCell<Job>>
     shell.create_job(processes, background)
 }
 
-
+// takes a job id or a pid
 pub fn get_job<T>(id: T) -> Option<Rc<RefCell<Job>>>
 where
     Shell: ShellUtils<T>,
@@ -164,6 +165,7 @@ where
     shell.get_job(id)
 }
 
+// takes a job id or a pid
 pub fn delete_job<T>(id: T)
 where
     Shell: ShellUtils<T>,

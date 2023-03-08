@@ -6,6 +6,7 @@ mod eval;
 mod jobs;
 mod builtins;
 mod trap;
+mod var;
 //mod eval_alt;
 //mod exec;
 //mod process;
