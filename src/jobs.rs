@@ -246,7 +246,7 @@ impl Display for Job {
 
 
 pub fn wait_for_job(job: Option<Rc<RefCell<Job>>>) -> WaitStatus {
-    
+    eprintln!("wait_for_job");
     let status;
     let block = if job.is_some() {DOWAIT_BLOCK} else {DOWAIT_NONBLOCK};
 
@@ -268,7 +268,7 @@ pub fn wait_for_job(job: Option<Rc<RefCell<Job>>>) -> WaitStatus {
 
 
 fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,Errno> {
-
+    eprintln!("wait_one");
 
     let mut this_job: Option<Rc<RefCell<Job>>> = None;
 
@@ -366,13 +366,15 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
 
 
 fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
+    eprintln!("do_wait");
     let got_sigchld = trap::got_sigchld();
 
-    if job.is_some() && job.as_ref().unwrap().borrow().state == JobState::Running {
+    if job.is_some() && job.as_ref().unwrap().borrow().state != JobState::Running {
         block = DOWAIT_NONBLOCK;
     }
 
     if block == DOWAIT_NONBLOCK && !got_sigchld {
+        eprintln!("return 1");
         return 1;
     }
 
@@ -405,6 +407,7 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
 }
 
 pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
+    eprintln!("wait_process");
     let mut old_mask = signal::SigSet::empty();
     let mut flags = if block == DOWAIT_BLOCK {WaitPidFlag::empty()} else {WaitPidFlag::WNOHANG};
 
