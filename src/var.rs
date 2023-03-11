@@ -243,7 +243,7 @@ impl Default for ImportantVars {
         Self {
             home: env::var("HOME").unwrap_or_else(|_| "/root".to_string()),
             pwd: env::current_dir().unwrap().to_str().unwrap().to_string(),
-            path: vec!["/usr/local/sbin".to_string(),"/usr/local/bin".to_string(),"/usr/sbin".to_string(),"/usr/bin".to_string(),"/sbin:/bin".to_string()],
+            path: vec!["/bin".to_string(),"/usr/local/sbin".to_string(),"/usr/local/bin".to_string(),"/usr/sbin".to_string(),"/usr/bin".to_string(),"/sbin:/bin".to_string()],
             history_location: String::new(),
             ps1,
             ps2: "> ".to_string(),

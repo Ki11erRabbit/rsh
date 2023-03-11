@@ -13,6 +13,7 @@ mod var;
 use lalrpop_util::lalrpop_mod;
 
 use lexer::Lexer;
+
 use std::io;
 use std::env;
 use std::fs::File;
@@ -21,7 +22,7 @@ use std::io::prelude::*;
 
 lalrpop_mod!(pub grammar);
 
-
+use nix::errno::Errno;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
@@ -149,6 +150,9 @@ fn interactive_loop() {
             },
             Err(ReadlineError::Eof) => {
                 break;
+            },
+            Err(ReadlineError::Errno(error)) => {
+                continue;
             },
             Err(err) => {
                 println!("Redline Error: {:?}", err);

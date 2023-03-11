@@ -1,19 +1,33 @@
 use crate::ast::*;
 use crate::jobs::Process;
 use std::ffi::CString;
-use crate::jobs::Job;
+use crate::jobs;
 use crate::builtins;
 use crate::shell;
 use nix::errno::Errno;
+use nix::sys::wait::WaitStatus;
 use std::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::mem;
 use std::env;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
-use nix::sys::wait::wait;
+
+pub static mut EXIT_STATUS: AtomicI32 = AtomicI32::new(0);
+
+pub fn get_exit_status() -> WaitStatus {
+    unsafe {
+        WaitStatus::from_raw(Pid::from_raw(-1),EXIT_STATUS.load(Ordering::Relaxed)).unwrap()
+    }
+}
+pub fn set_exit_status(status: i32) {
+    unsafe {
+        EXIT_STATUS.store(status, Ordering::Relaxed);
+    }
+}
 
 
 pub fn eval(ast: &CompleteCommand) -> Result<i32,&'static str> {
@@ -131,18 +145,14 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
             count += 1;
         }
         
+    }
         if !background {
-            for _ in 0..proc_count {
-                match wait() {
-                    Ok(_) => {},
-                    Err(_) => {}
-                }
-            }
+            eprintln!("waiting for job");
+            jobs::wait_for_job(Some(job));
         }
         else {
-            println!("[{}] ({}) {}", job.job_id, job.processes[0].pid, job);
+            //println!("[{}] ({}) {}", job.job_id, job.processes[0].pid, job.borrow());
         }
-    }
 
     //let job = temp_exec(processes)?;
 
@@ -284,7 +294,12 @@ fn temp_exec(process: &mut Process) -> Result<i32,String> {
     //
     //set assignments
    
-    let argv0 = shell::lookup_command(&process.argv0).unwrap();//TODO: handle error
+    let argv0 = match shell::lookup_command(&process.argv0) {
+        Some(cmd) => cmd,
+        None => {
+            return Err(format!("{}: Command not found", process.argv0));
+        }
+    };
 
     let command = CString::new(argv0).unwrap();
 

@@ -18,7 +18,26 @@ const S_RESET: usize = 5;
 static mut GOT_SIGCHLD: AtomicBool = AtomicBool::new(false);
 static mut SIGINT_PENDING: AtomicBool = AtomicBool::new(false);
 static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
+static mut PENDING_SIGNAL: Option<Signal> = None;
 
+
+pub fn set_got_sigchld(val: bool) {
+    unsafe {
+        GOT_SIGCHLD.store(val, Ordering::Relaxed);
+    }
+}
+
+pub fn got_sigchld() -> bool {
+    unsafe {
+        GOT_SIGCHLD.load(Ordering::Relaxed)
+    }
+}
+
+pub fn get_pending_signal() -> Option<Signal> {
+    unsafe {
+        PENDING_SIGNAL
+    }
+}
 
 
 extern "C" fn on_sig(sig_num: c_int) {
@@ -28,7 +47,7 @@ extern "C" fn on_sig(sig_num: c_int) {
     unsafe {
         if sig_num == signal::SIGCHLD as c_int {
             GOT_SIGCHLD.store(true, Ordering::Relaxed);
-            sig_chld();//this is different from how dash does it but it should allow for for traps to be set
+            //sig_chld();//this is different from how dash does it but it should allow for for traps to be set
             if !shell::is_trap_set(signal::SIGCHLD) {
                 return;
             }
@@ -241,4 +260,31 @@ pub fn set_signal(sig_num: c_int) {
     unsafe {
         signal::sigaction(signal, &sig_action).unwrap();
     }
+}
+
+pub fn sig_block_all(old_mask: &mut signal::SigSet) {
+    let sigset = signal::SigSet::all();
+    signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), Some(old_mask)).unwrap();
+}
+
+
+pub fn sig_clear_mask() {
+    let sigset = signal::SigSet::empty();
+    signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
+}
+
+pub fn sig_suspend(mask: &signal::SigSet) {
+    return;
+    while get_pending_signal().is_none() {
+        //do nothing
+    }
+    return;
+    unsafe {
+        libc::sigsuspend(mask.as_ref() as *const libc::sigset_t);
+    }
+    //nix::unistd::pause();
+    /*match mask.wait() {
+        Ok(_) => (),
+        Err(_) => (),
+    }*/
 }

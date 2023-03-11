@@ -197,6 +197,12 @@ pub fn get_current_job() -> Option<Rc<RefCell<Job>>> {
     let shell = SHELL.get().borrow();
     shell.get_current_job()
 }
+pub fn get_job_table() -> Rc<RefCell<BTreeMap<usize,Rc<RefCell<Job>>>>> {
+    SHELL.get().borrow_mut().job_control.get_job_table()
+}
+pub fn set_current_job(job_id: usize) {
+    SHELL.get().borrow_mut().job_control.set_current_job(job_id);
+}
 
 pub fn is_trap_set(signal: Signal) -> bool {
     let shell = SHELL.get().borrow();
