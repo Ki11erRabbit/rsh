@@ -6,7 +6,6 @@ use crate::builtins;
 use crate::shell;
 use nix::errno::Errno;
 use nix::sys::wait::WaitStatus;
-use std::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::mem;
@@ -80,6 +79,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
         let job = shell::create_job(processes, background);
     {
         let mut job = job.borrow_mut();
+        let job_id = job.job_id;
         let procs = job.borrow_processes_mut();
 
             
@@ -98,8 +98,8 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                 }
                 pip = pipe_result.unwrap();
             }
-
-            if temp_fork(process) == Ok(Pid::from_raw(0)) {
+            let temp_fork_result = temp_fork(process);
+            if temp_fork_result == Ok(Pid::from_raw(0)) {
                 if pgid.is_none() {
                     pgid = Some(getpid());
                 }
@@ -133,6 +133,9 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
                 }
                 unreachable!();
             }
+            else if matches!(temp_fork_result, Ok(_)) {
+                shell::update_pid_table(job_id, temp_fork_result.unwrap());
+            }
             if prev_fd >= 0 {
                 close(prev_fd).unwrap();
             }
@@ -147,11 +150,12 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
         
     }
         if !background {
-            eprintln!("waiting for job");
-            jobs::wait_for_job(Some(job));
+            //eprintln!("waiting for job");
+            jobs::wait_for_job(Some(job.clone()));
+            shell::delete_job(job.borrow().job_id);
         }
         else {
-            //println!("[{}] ({}) {}", job.job_id, job.processes[0].pid, job.borrow());
+            println!("[{}] ({}) {}", job.borrow().job_id, job.borrow().processes[0].pid, job.borrow());
         }
 
     //let job = temp_exec(processes)?;
@@ -254,6 +258,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
     match cmd_name {
         "cd" => true,
         "exit" => true,
+        "jobs" => true,
         _ => false,
     }
 }
@@ -266,6 +271,10 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
         },
         "exit" => {
             builtins::quit().unwrap();
+            Ok(None)
+        },
+        "jobs" => {
+            builtins::jobs().unwrap();
             Ok(None)
         },
         _ => {

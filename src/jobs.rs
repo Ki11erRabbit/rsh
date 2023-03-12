@@ -25,6 +25,7 @@ pub trait JobUtils<I> {
 
 pub struct JobControl {
     pub job_table: Rc<RefCell<BTreeMap<usize, Rc<RefCell<Job>>>>>,
+    pub background_jobs: HashMap<usize, usize>,
     pub pid_to_job: HashMap<Pid, usize>,
     pub current_job: Option<usize>,
     pub next_job_id: usize,
@@ -35,6 +36,7 @@ impl JobControl {
     pub fn new() -> Self {
         Self {
             job_table: Rc::new(RefCell::new(BTreeMap::new())),
+            background_jobs: HashMap::new(),
             pid_to_job: HashMap::new(),
             current_job: None,
             jobctl: false,
@@ -51,12 +53,26 @@ impl JobControl {
         let job = Job::new(processes, self.next_job_id, background);
         
         self.job_table.borrow_mut().insert(self.next_job_id, Rc::new(RefCell::new(job)));
+        if background {
+            self.background_jobs.insert(self.next_job_id, self.next_job_id);
+        }
 
         self.current_job = Some(self.next_job_id);
 
         self.next_job_id = self.next_job_id + 1;
 
         self.job_table.borrow().get(&self.current_job.unwrap()).unwrap().clone()
+    }
+
+    pub fn update_pid_table(&mut self, job_id: JobId, pid: Pid) {
+        self.pid_to_job.insert(pid, job_id);
+    }
+
+    pub fn background_jobs(&self) -> bool {
+        self.background_jobs.is_empty()
+    }
+    pub fn is_background_job(&self, job_id: usize) -> bool {
+        self.background_jobs.contains_key(&job_id)
     }
 
     pub fn get_current_job(&self) -> Option<Rc<RefCell<Job>>> {
@@ -69,6 +85,21 @@ impl JobControl {
 
     pub fn set_current_job(&mut self, job_id: usize) {
         self.current_job = Some(job_id);
+    }
+
+    
+    pub fn clear_completed_jobs(&mut self) {
+        let mut job_ids = Vec::new();
+        job_ids.reserve(self.job_table.borrow().len());
+        for (id, job) in self.job_table.borrow().iter() {
+            if job.borrow().state == JobState::Finished {
+                job_ids.push(*id);
+            }
+        }
+
+        for id in job_ids {
+            self.delete_job(id);
+        }
     }
 
     fn update_next_job_id(&mut self) {
@@ -97,13 +128,16 @@ impl JobUtils<Pid> for JobControl {
         
         
         let job = self.job_table.borrow_mut().remove(&job_id).unwrap();
+        
+        if job.borrow().background {
+            self.background_jobs.remove(&job_id);
+        }
 
         for process in job.borrow().borrow_processes() {
             self.pid_to_job.remove(&process.pid);
         }
 
         self.update_next_job_id();
-        println!("Job_table: {:?}", self.job_table);
     }
 
     fn get_job(&self, pid: Pid) -> Option<Rc<RefCell<Job>>> {
@@ -130,6 +164,10 @@ impl JobUtils<JobId> for JobControl {
         for process in job.borrow().borrow_processes() {
             self.pid_to_job.remove(&process.pid);
         }
+
+        if job.borrow().background {
+            self.background_jobs.remove(&job_id);
+        }
         
         self.update_next_job_id();
     }
@@ -142,8 +180,8 @@ impl JobUtils<JobId> for JobControl {
 impl Display for JobControl {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let mut s = String::new();
-        for job in self.job_table.borrow().values() {
-            s.push_str(&format!("{}\n", job.borrow()));
+        for (id, job) in self.job_table.borrow().iter() {
+            s.push_str(&format!("[{}] {}\n",id, job.borrow()));
         }
         write!(f, "{}", s)
     }
@@ -189,8 +227,8 @@ pub struct Job {
     pub job_id: usize,
     pub stop_status: WaitStatus,
     pub state: JobState,
+    pub background: bool,
     pub sigint: bool,
-    pub jobctl: bool,
     pub waited: bool,
     pub used: bool,
     pub changed: bool,
@@ -203,17 +241,17 @@ impl PartialEq for Job {
 }
 
 impl Job {
-    pub fn new(processes: Vec<Process>, job_id: usize, jobctl: bool) -> Self {
+    pub fn new(processes: Vec<Process>, job_id: usize, background: bool) -> Self {
         Self {
             processes,
             stop_status: WaitStatus::StillAlive,
             state: JobState::Running,
             sigint: false,
-            jobctl,
             waited: false,
             used: false,
             job_id,
             changed: false,
+            background,
         }
     }
 
@@ -223,6 +261,14 @@ impl Job {
 
     pub fn borrow_processes_mut(&mut self) -> &mut Vec<Process> {
         &mut self.processes
+    }
+
+    pub fn set_process_status(&mut self, pid: Pid, status: WaitStatus) {
+        for process in &mut self.processes {
+            if process.pid == pid {
+                process.status = Some(status);
+            }
+        }
     }
 }
 
@@ -244,9 +290,25 @@ impl Display for Job {
 //pub fn forkshell()
 
 
+pub fn wait_for_job_sigchld(job: Option<Rc<RefCell<Job>>>, status: WaitStatus) -> WaitStatus {
+
+    if job.is_none() {
+        return status;
+    }
+    let job = job.unwrap();
+
+    if job.borrow().processes.len() == 1 {
+        job.borrow_mut().stop_status = status;
+        job.borrow_mut().state = JobState::Finished;
+        shell::delete_job(job.borrow().job_id);
+        return status;
+    }
+
+    wait_for_job(Some(job))
+}
 
 pub fn wait_for_job(job: Option<Rc<RefCell<Job>>>) -> WaitStatus {
-    eprintln!("wait_for_job");
+    //eprintln!("wait_for_job");
     let status;
     let block = if job.is_some() {DOWAIT_BLOCK} else {DOWAIT_NONBLOCK};
 
@@ -260,15 +322,15 @@ pub fn wait_for_job(job: Option<Rc<RefCell<Job>>>) -> WaitStatus {
 
     status = job.borrow().stop_status;
 
-    if job.borrow().state == JobState::Finished {
-        //freejob
+    if job.borrow().state == JobState::Finished || matches!(job.borrow().stop_status,WaitStatus::Exited(_, _)) {
+        shell::delete_job(job.borrow().job_id);
     }
     status
 }
 
 
 fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,Errno> {
-    eprintln!("wait_one");
+    //eprintln!("wait_one");
 
     let mut this_job: Option<Rc<RefCell<Job>>> = None;
 
@@ -291,21 +353,18 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
         return Ok(None);
     }
    
-    let mut status = WaitStatus::StillAlive;
+    let mut status = result;
     let mut pid = Pid::from_raw(-1);
 
     match result {
         WaitStatus::Exited(id, _) => {
             pid = id;
-            status = result;
         },
         WaitStatus::Signaled(id, _, _) => {
             pid = id;
-            status = result;
         },
         WaitStatus::Stopped(id, _) => {
             pid = id;
-            status = result;
         },
         _ => (),
     }
@@ -319,7 +378,6 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
 
         for process in jb.borrow_mut().borrow_processes_mut() {
             if process.pid == pid {
-                state = JobState::Running;
                 process.status = Some(status);
                 this_job = Some(jb.clone());
             }
@@ -366,7 +424,7 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
 
 
 fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
-    eprintln!("do_wait");
+    //eprintln!("do_wait");
     let got_sigchld = trap::got_sigchld();
 
     if job.is_some() && job.as_ref().unwrap().borrow().state != JobState::Running {
@@ -374,7 +432,7 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
     }
 
     if block == DOWAIT_NONBLOCK && !got_sigchld {
-        eprintln!("return 1");
+        //eprintln!("return 1");
         return 1;
     }
 
@@ -407,7 +465,7 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
 }
 
 pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
-    eprintln!("wait_process");
+    //eprintln!("wait_process");
     let mut old_mask = signal::SigSet::empty();
     let mut flags = if block == DOWAIT_BLOCK {WaitPidFlag::empty()} else {WaitPidFlag::WNOHANG};
 
@@ -417,7 +475,7 @@ pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
         trap::set_got_sigchld(false);
         loop {
             result = waitpid(Pid::from_raw(-1), Some(flags));
-            eprintln!("waitpid result: {:?}", result);
+            //eprintln!("waitpid result: {:?}", result);
 
             if result.is_err() && result.err().unwrap() == Errno::EINTR {
                 continue;

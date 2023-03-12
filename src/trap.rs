@@ -6,8 +6,9 @@ use std::os::raw::c_int;
 use nix::sys::wait::{WaitStatus,WaitPidFlag,waitpid};
 use nix::unistd::Pid;
 
-use crate::jobs::{Job, Process, JobState};
+use crate::jobs::{self,JobState};
 use crate::shell;
+use crate::shell::ShellUtils;
 
 const S_DFL: usize = 1;
 const S_CATCH: usize = 2;
@@ -19,7 +20,6 @@ static mut GOT_SIGCHLD: AtomicBool = AtomicBool::new(false);
 static mut SIGINT_PENDING: AtomicBool = AtomicBool::new(false);
 static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
 static mut PENDING_SIGNAL: Option<Signal> = None;
-
 
 pub fn set_got_sigchld(val: bool) {
     unsafe {
@@ -47,6 +47,11 @@ extern "C" fn on_sig(sig_num: c_int) {
     unsafe {
         if sig_num == signal::SIGCHLD as c_int {
             GOT_SIGCHLD.store(true, Ordering::Relaxed);
+
+            sig_chld();
+            
+            
+
             //sig_chld();//this is different from how dash does it but it should allow for for traps to be set
             if !shell::is_trap_set(signal::SIGCHLD) {
                 return;
@@ -73,8 +78,65 @@ extern "C" fn on_sig(sig_num: c_int) {
     }
 }
 
-// signal handler for SIGCHLD
+
 fn sig_chld() {
+    let pid = Pid::from_raw(-1);
+
+    let flag: WaitPidFlag = WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED;
+    let result = waitpid(pid, Some(flag));
+    if result.is_err() {
+        return;
+    }
+    let status = result.unwrap();
+    let pid;
+    let status = match &status {
+        WaitStatus::Exited(id, _) => {
+            pid = id;
+            status
+        },
+        WaitStatus::Signaled(id, _, _) => {
+            pid = id;
+            status
+        },
+        WaitStatus::Stopped(id, _) => {
+            pid = id;
+            status
+        },
+        WaitStatus::StillAlive => {
+            return;
+        },
+        _ => {
+            return;
+        }, 
+    };
+
+    let job = shell::get_job(*pid);
+    if job.is_none() {
+        return;
+    }
+    job.as_ref().unwrap().borrow_mut().set_process_status(*pid, status);
+   
+    if job.as_ref().unwrap().borrow().background {
+        match status {
+            WaitStatus::Signaled(_, _, _) => {
+                let msg = format!("Job [{}] ({}) terminated by signal",job.as_ref().unwrap().borrow().job_id, pid);
+                std::io::stdout().write_all(&msg.as_bytes()).unwrap();
+                std::io::stdout().flush().unwrap();
+            },
+            WaitStatus::Stopped(_, _) => {
+                let msg = format!("Job [{}] ({}) stopped by signal",job.as_ref().unwrap().borrow().job_id, pid);
+                std::io::stdout().write_all(&msg.as_bytes()).unwrap();
+                std::io::stdout().flush().unwrap();
+            },
+            _ => {},
+        }
+        
+        jobs::wait_for_job_sigchld(job, status);
+    }
+}
+
+// signal handler for SIGCHLD
+fn sig_chld_old() {
     let child_pid: Pid = Pid::from_raw(-1);
 
     let flag: WaitPidFlag = WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED;

@@ -25,3 +25,7 @@ pub fn quit() -> Result<(), std::io::Error> {
     std::process::exit(0);
 }
 
+pub fn jobs() -> Result<(), std::io::Error> {
+    println!("{}", shell::display_jobs());
+    Ok(())
+}

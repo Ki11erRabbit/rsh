@@ -100,6 +100,16 @@ impl Shell {
         self.history_location = location.to_string();
     }
 
+    pub fn background_jobs(&self) -> bool {
+        self.job_control.background_jobs()
+    }
+    pub fn is_background_job(&self, job_id: JobId) -> bool {
+        self.job_control.is_background_job(job_id)
+    }
+    pub fn update_pid_table(&mut self, job_id: JobId, pid: Pid) {
+        self.job_control.update_pid_table(job_id, pid);
+    }
+
     pub fn create_job(&mut self, processes: Vec<Process>, background: bool) -> Rc<RefCell<Job>> {
         self.job_control.create_job(processes, background)
     }
@@ -202,6 +212,18 @@ pub fn get_job_table() -> Rc<RefCell<BTreeMap<usize,Rc<RefCell<Job>>>>> {
 }
 pub fn set_current_job(job_id: usize) {
     SHELL.get().borrow_mut().job_control.set_current_job(job_id);
+}
+pub fn background_jobs() -> bool {
+    let shell = SHELL.get().borrow();
+    shell.background_jobs()
+}
+pub fn is_background_job(job_id: JobId) -> bool {
+    let shell = SHELL.get().borrow();
+    shell.is_background_job(job_id)
+}
+pub fn update_pid_table(job_id: JobId, pid: Pid) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.update_pid_table(job_id, pid);
 }
 
 pub fn is_trap_set(signal: Signal) -> bool {
