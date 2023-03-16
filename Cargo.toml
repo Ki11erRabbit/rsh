@@ -13,8 +13,9 @@ signal-hook = "0.3.15"
 lalrpop-util = "0.19.8"
 regex = "1.7.1"
 fragile = "2.0.0"
-rustyline = "5.0.2"
 libc = "0.2.140"
+rustyline = { version = "11.0.0", features = ["with-fuzzy"]}
 
 [build-dependencies]
 lalrpop = "0.19.8"
+

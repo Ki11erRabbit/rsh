@@ -60,6 +60,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
     let mut commands = Vec::new();
 
     //block interrupts
+    trap::interrupts_off();
     for command in pipeline.iter() {
         let process = eval_command(command)?;
         if process.is_none() {
@@ -77,7 +78,6 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
     }
     let proc_count;
     // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
-    trap::interrupts_off();
         let job = shell::create_job(processes, background);
     {
         let mut job = job.borrow_mut();
