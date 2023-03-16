@@ -24,7 +24,7 @@ lalrpop_mod!(pub grammar);
 
 use nix::errno::Errno;
 use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use rustyline::{Editor, Cmd};
 
 
 fn main() {
@@ -136,6 +136,8 @@ fn interactive_loop() {
 
     let rl = shell::get_readline();
 
+    //rl.borrow_mut().bind_sequence(rustyline::Event::KeySeq(vec![rustyline::KeyEvent::ctrl('z')]), rustyline::Cmd::Suspend);
+
     loop {
         let input;
 
@@ -151,9 +153,9 @@ fn interactive_loop() {
             Err(ReadlineError::Eof) => {
                 break;
             },
-            Err(ReadlineError::Errno(error)) => {
+            /*Err(ReadlineError::Errno(error)) => {
                 continue;
-            },
+            },*/
             Err(err) => {
                 println!("Redline Error: {:?}", err);
                 break;

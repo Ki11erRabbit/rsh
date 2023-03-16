@@ -9,7 +9,9 @@ use lazy_static::lazy_static;
 use nix::unistd::{getpid, getcwd};
 use nix::sys::signal::Signal;
 use std::os::raw::c_int;
-use rustyline::Editor;
+use rustyline::{Editor,DefaultEditor};
+use rustyline::history::FileHistory;
+use rustyline::config;
 use crate::var::{VarData, VarDataUtils};
 
 lazy_static! {
@@ -51,12 +53,31 @@ pub struct Shell {
     //misc
     root_pid: Pid,
     path: String,
-    readline: Rc<RefCell<Editor<()>>>,
+    readline: Rc<RefCell<Editor<(),FileHistory>>>,
     history_location: String,
 }
 
+/*static DEFAULT_KEYS: Vec<KeyEvent> = vec![
+    KeyEvent::Ctrl('z'),
+
+];*/
+
+
 impl Shell {
     pub fn new() -> Self {
+     /*   let readline = Editor::<()>::new();
+        readline.bind_sequence(KeyEvent::Ctrl('z'), Cmd::new(|_, _| {
+            println!("Ctrl-Z");
+            Ok(())
+        }));*/
+        let config = config::Builder::new()
+            .behavior(config::Behavior::PreferTerm)
+            .completion_type(config::CompletionType::Fuzzy)
+            .build();
+        let readline = Rc::new(RefCell::new(DefaultEditor::with_config(config).unwrap()));
+        
+
+
         Self {
             script_name: "rsh".to_string(),
             interactive: true,
@@ -75,12 +96,12 @@ impl Shell {
             got_sig: vec![false; 32],
             pending_signal: None,
             signal_mode: HashMap::new(),
-            readline: Rc::new(RefCell::new(Editor::<()>::new())),
+            readline,
             history_location: String::new(),
         }
     } 
 
-    pub fn get_readline(&self) -> Rc<RefCell<Editor<()>>> {
+    pub fn get_readline(&self) -> Rc<RefCell<Editor<(),rustyline::history::DefaultHistory>>> {
         self.readline.clone()
     }
 
@@ -166,7 +187,7 @@ pub fn set_history_location(location: &str) {
     shell.set_history_location(location);
 }
 
-pub fn get_readline() -> Rc<RefCell<Editor<()>>> {
+pub fn get_readline() -> Rc<RefCell<Editor<(),rustyline::history::DefaultHistory>>> {
     let shell = SHELL.get().borrow();
     shell.get_readline()
 }

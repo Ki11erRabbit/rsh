@@ -118,7 +118,6 @@ impl JobControl {
 
 impl JobUtils<Pid> for JobControl {
     fn delete_job(&mut self, pid: Pid) {
-        
         let job_id = self.pid_to_job.get(&pid);
 
         let job_id = match job_id {
@@ -127,7 +126,25 @@ impl JobUtils<Pid> for JobControl {
         };
         
         
-        let job = self.job_table.borrow_mut().remove(&job_id).unwrap();
+        let job = match self.job_table.borrow_mut().remove(&job_id) {
+            Some(job) => job,
+            None => return,
+        };
+        
+         {
+             let mut job = job.borrow_mut();
+             if matches!(job.processes[0].status, Some(WaitStatus::Stopped(_,_))) {
+                 job.state = JobState::Stopped;
+                 job.stop_status = job.processes[0].status.unwrap();
+             }
+         } 
+
+        println!("{:?}",job.borrow());
+        if matches!(job.borrow().stop_status,WaitStatus::Stopped(_,_)) {
+            job.borrow_mut().state = JobState::Stopped;
+            self.job_table.borrow_mut().insert(job_id, job);
+            return;
+        }
         
         if job.borrow().background {
             self.background_jobs.remove(&job_id);
@@ -160,6 +177,21 @@ impl JobUtils<JobId> for JobControl {
             Some(job) => job,
             None => return,
         };
+         {
+             let mut job = job.borrow_mut();
+             if matches!(job.processes[0].status, Some(WaitStatus::Stopped(_,_))) {
+                 job.state = JobState::Stopped;
+                 job.stop_status = job.processes[0].status.unwrap();
+             }
+         } 
+        
+
+        println!("{:?}",job.borrow());
+        if matches!(job.borrow().stop_status,WaitStatus::Stopped(_,_)) {
+            job.borrow_mut().state = JobState::Stopped;
+            self.job_table.borrow_mut().insert(job_id, job);
+            return;
+        }
 
         for process in job.borrow().borrow_processes() {
             self.pid_to_job.remove(&process.pid);
@@ -181,7 +213,7 @@ impl Display for JobControl {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let mut s = String::new();
         for (id, job) in self.job_table.borrow().iter() {
-            s.push_str(&format!("[{}] {}\n",id, job.borrow()));
+            s.push_str(&format!("[{}]+ {}\n",id, job.borrow()));
         }
         write!(f, "{}", s)
     }
@@ -194,6 +226,17 @@ pub enum JobState {
     Running,
     Finished,
     Stopped,
+}
+
+impl Display for JobState {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
+        match self {
+            JobState::Waiting => write!(f, "Waiting"),
+            JobState::Running => write!(f, "Running"),
+            JobState::Finished => write!(f, "Done"),
+            JobState::Stopped => write!(f, "Stopped"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -281,7 +324,7 @@ impl Display for Job {
                 s.push_str(" | ");
             }
         }
-        write!(f, "{}", s)
+        write!(f, "{} {}",self.state, s)
     }
 }
 
@@ -375,7 +418,7 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
             continue;
         }
         state = JobState::Finished;
-
+        let mut stopped = false;
         for process in jb.borrow_mut().borrow_processes_mut() {
             if process.pid == pid {
                 process.status = Some(status);
@@ -388,10 +431,13 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
                 continue;
             }
             if matches!(process.status, Some(WaitStatus::Stopped(_, _))) {
+                println!("stopped");
                 state = JobState::Stopped;
-                jb.borrow_mut().stop_status = process.status.unwrap();
+                stopped = true;
             }
         }
+        let stop_status = jb.borrow().processes[0].status.unwrap();
+        jb.borrow_mut().stop_status = stop_status;
         if this_job.is_some() {
             if state != JobState::Running {
                 this_job.as_ref().unwrap().borrow_mut().changed = true;
@@ -467,7 +513,7 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
 pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
     //eprintln!("wait_process");
     let mut old_mask = signal::SigSet::empty();
-    let mut flags = if block == DOWAIT_BLOCK {WaitPidFlag::empty()} else {WaitPidFlag::WNOHANG};
+    let flags = if block == DOWAIT_BLOCK {WaitPidFlag::WUNTRACED} else {WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED};
 
 
     let mut result;
@@ -475,9 +521,15 @@ pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
         trap::set_got_sigchld(false);
         loop {
             result = waitpid(Pid::from_raw(-1), Some(flags));
-            //eprintln!("waitpid result: {:?}", result);
+            eprintln!("waitpid result: {:?}", result);
 
+            if result.is_ok() && result.unwrap() == WaitStatus::StillAlive {
+                eprintln!("still alive");
+                panic!();
+                return result;
+            }
             if result.is_err() && result.err().unwrap() == Errno::EINTR {
+                return result;
                 continue;
             } 
             else {

@@ -20,6 +20,25 @@ static mut GOT_SIGCHLD: AtomicBool = AtomicBool::new(false);
 static mut SIGINT_PENDING: AtomicBool = AtomicBool::new(false);
 static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
 static mut PENDING_SIGNAL: Option<Signal> = None;
+static mut BLOCK_SIGNALS: AtomicBool = AtomicBool::new(false);
+
+pub fn interrupts_off() {
+    let mut sigset = signal::SigSet::all();
+    sigset.remove(signal::SIGINT);
+    sigset.remove(signal::SIGTSTP);
+    sigset.remove(signal::SIGCHLD);
+
+    //signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
+    
+}
+pub fn interrupts_on() {
+    //sig_clear_mask();
+}
+fn is_blocked() -> bool {
+    unsafe {
+        BLOCK_SIGNALS.load(Ordering::Relaxed)
+    }
+}
 
 pub fn set_got_sigchld(val: bool) {
     unsafe {
@@ -41,8 +60,15 @@ pub fn get_pending_signal() -> Option<Signal> {
 
 
 extern "C" fn on_sig(sig_num: c_int) {
+    println!("got signal {}", sig_num);
+    if is_blocked() {
+        return;
+    }
     if shell::vforked() {
         return;
+    }
+    if sig_num == signal::SIGTSTP as c_int {
+        println!("got sigtstp");
     }
     unsafe {
         if sig_num == signal::SIGCHLD as c_int {
@@ -58,7 +84,6 @@ extern "C" fn on_sig(sig_num: c_int) {
             }
         }
     }
-
     //set which signal is got
     //set pending signal
     shell::set_got_sig(sig_num);
@@ -135,73 +160,6 @@ fn sig_chld() {
     }
 }
 
-// signal handler for SIGCHLD
-fn sig_chld_old() {
-    let child_pid: Pid = Pid::from_raw(-1);
-
-    let flag: WaitPidFlag = WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED;
-    
-    loop {
-        match waitpid(child_pid, Some(flag)) {
-            Ok(WaitStatus::Exited(pid, status)) => {
-                shell::delete_job(pid);
-            },
-            Ok(WaitStatus::Signaled(pid, signal, _)) => {
-                let job = shell::get_job(pid);
-                let job = match job {
-                    Some(job) => job,
-                    None => {
-                        continue;
-                    },
-                };
-                
-                {
-                    let mut job = job.borrow_mut();
-
-                    let msg = format!("Job [{}] ({}) terminated by signal {}",job.job_id, pid, signal);
-                    std::io::stdout().write_all(&msg.as_bytes()).unwrap();
-                    std::io::stdout().flush().unwrap();
-                    //job.state = JobState::Finished;
-                }
-                
-                shell::delete_job(pid);
-                
-                //remove from job list
-            },
-            Ok(WaitStatus::Stopped(pid, signal)) => {
-                let job = shell::get_job(pid);
-                let job = match job {
-                    Some(job) => job,
-                    None => {
-                        continue;
-                    },
-                };
-                
-                {
-                    let mut job = job.borrow_mut();
-
-                    let msg = format!("Job [{}] ({}) stopped by signal {}",job.job_id, pid, signal);
-                    std::io::stdout().write_all(&msg.as_bytes()).unwrap();
-                    std::io::stdout().flush().unwrap();
-                    job.state = JobState::Stopped;
-                }
-                //update job list
-            },
-            Ok(WaitStatus::StillAlive) => {
-                break;
-            },
-            Err(_) => {
-                break;
-            },
-            _ => (),
-        }
-    }
-
-
-
-
-
-}
 
 pub fn on_sigint() {
     unsafe {
@@ -246,7 +204,7 @@ pub fn set_signal(sig_num: c_int) {
 
     if rootshell && action == S_DFL && !lvforked {
         match signal {
-            Signal::SIGINT => {
+            Signal::SIGINT | Signal::SIGTSTP => {
                 //if iflag || minusc || sflag
                 action = S_CATCH;
             },
@@ -254,7 +212,7 @@ pub fn set_signal(sig_num: c_int) {
                 //if iflag
                 action = S_IGN;
             },
-            Signal::SIGTSTP | Signal::SIGTTOU => {
+            Signal::SIGTTOU => {
                 //if mflag
                 action = S_IGN;
             },

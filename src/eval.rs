@@ -4,6 +4,7 @@ use std::ffi::CString;
 use crate::jobs;
 use crate::builtins;
 use crate::shell;
+use crate::trap;
 use nix::errno::Errno;
 use nix::sys::wait::WaitStatus;
 use std::fs::OpenOptions;
@@ -76,6 +77,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
     }
     let proc_count;
     // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
+    trap::interrupts_off();
         let job = shell::create_job(processes, background);
     {
         let mut job = job.borrow_mut();
@@ -152,7 +154,12 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
         if !background {
             //eprintln!("waiting for job");
             jobs::wait_for_job(Some(job.clone()));
-            shell::delete_job(job.borrow().job_id);
+            let id;
+            {
+                let job = job.borrow();
+                id = job.job_id;
+            }
+            shell::delete_job(id);
         }
         else {
             println!("[{}] ({}) {}", job.borrow().job_id, job.borrow().processes[0].pid, job.borrow());
@@ -162,7 +169,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 
     
     //unblock interrupts
-
+    trap::interrupts_on();
 
     Ok(0)
 }
@@ -259,6 +266,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "cd" => true,
         "exit" => true,
         "jobs" => true,
+        "fg" | "bg" => true,
         _ => false,
     }
 }
@@ -275,6 +283,10 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
         },
         "jobs" => {
             builtins::jobs().unwrap();
+            Ok(None)
+        },
+        "fg" | "bg"=> {
+            builtins::fgbg(command).unwrap();
             Ok(None)
         },
         _ => {
