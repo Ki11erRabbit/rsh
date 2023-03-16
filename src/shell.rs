@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use crate::jobs::{Job, Process, JobControl, JobUtils, JobId};
+use crate::trap;
 use nix::unistd::Pid;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -212,8 +213,10 @@ pub fn delete_job<T>(id: T)
 where
     Shell: ShellUtils<T>,
 {
+    trap::interrupts_off();
     let mut shell = SHELL.get().borrow_mut();
     shell.delete_job(id);
+    trap::interrupts_on();
 }
 
 

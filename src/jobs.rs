@@ -582,6 +582,9 @@ fn format_status(result: WaitStatus, sig_only: bool) -> Option<String> {
     let mut output = String::new();
     match result {
         WaitStatus::Exited(pid, status) => {
+            if sig_only {
+                return None;
+            }
             let job = match shell::get_job(pid) {
                 Some(job) => job,
                 None => return None,

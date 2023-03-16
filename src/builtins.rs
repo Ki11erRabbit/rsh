@@ -7,6 +7,7 @@ use nix::unistd::Pid;
 use nix::sys::signal::kill;
 use nix::sys::signal::Signal;
 use crate::jobs;
+use crate::trap;
 
 
 enum IdType {
@@ -19,7 +20,7 @@ enum IdType {
 // this needs to change several variables when changing but for now we won't care
 pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
     
-
+    trap::interrupts_off();
     let path;
     if command.suffix.is_none() {
         path = env::var("HOME").unwrap();
@@ -27,6 +28,7 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
         path = command.suffix.as_ref().unwrap().word[0].to_string();
     }
     env::set_current_dir(path)?;
+    trap::interrupts_on();
     Ok(())
 }
 
@@ -42,6 +44,7 @@ pub fn jobs() -> Result<(), std::io::Error> {
 }
 
 pub fn fgbg(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    trap::interrupts_off();
     let id;
     let id_type;
     if command.suffix.is_none() {
@@ -62,6 +65,7 @@ pub fn fgbg(command: &SimpleCommand) -> Result<(), std::io::Error> {
     } else {
         bg(id.try_into().unwrap(), id_type)?;
     }
+    trap::interrupts_on();
 
     Ok(())
 }
