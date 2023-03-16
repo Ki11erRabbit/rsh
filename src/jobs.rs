@@ -324,6 +324,9 @@ impl Display for Job {
                 s.push_str(" | ");
             }
         }
+        if self.background {
+            s.push_str(" &");
+        }
         write!(f, "{} {}",self.state, s)
     }
 }
@@ -343,7 +346,10 @@ pub fn wait_for_job_sigchld(job: Option<Rc<RefCell<Job>>>, status: WaitStatus) -
     if job.borrow().processes.len() == 1 {
         job.borrow_mut().stop_status = status;
         job.borrow_mut().state = JobState::Finished;
-        shell::delete_job(job.borrow().job_id);
+        let id = {
+            job.borrow().job_id
+        };
+        shell::delete_job(id);
         return status;
     }
 
@@ -381,12 +387,14 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
     let mut this_job: Option<Rc<RefCell<Job>>> = None;
 
     // block interapt
+    trap::interrupts_off();
 
     let result = wait_process(block)?;
 
 
     if result.pid().is_none() {
         // unblock interupt
+        trap::interrupts_on();
         if this_job.is_some() && *this_job.as_ref().unwrap().borrow() == *job.as_ref().unwrap().borrow() {
 
             let output = format_status(result, true);
@@ -461,6 +469,7 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
     }
 
     // unblock interupts
+    trap::interrupts_on();
 
     if this_job.is_some() && *this_job.as_ref().unwrap().borrow() == *job.as_ref().unwrap().borrow() {
 
@@ -570,5 +579,37 @@ pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
 
 
 fn format_status(result: WaitStatus, sig_only: bool) -> Option<String> {
-    None
+    let mut output = String::new();
+    match result {
+        WaitStatus::Exited(pid, status) => {
+            let job = match shell::get_job(pid) {
+                Some(job) => job,
+                None => return None,
+            };
+            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+        },
+        WaitStatus::Signaled(pid, signal, dump) => {
+            let job = match shell::get_job(pid) {
+                Some(job) => job,
+                None => return None,
+            };
+            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+            if dump {
+                output.push_str(&format!("({}) (core dumped)", signal));
+            }
+            else {
+                output.push_str(&format!("({})", signal));
+            }
+        },
+        WaitStatus::Stopped(pid, signal) => {
+            let job = match shell::get_job(pid) {
+                Some(job) => job,
+                None => return None,
+            };
+            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+            output.push_str(&format!("({})", signal));
+        },
+        _ => return None,
+    }
+    return Some(output);
 }

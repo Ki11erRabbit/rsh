@@ -1,4 +1,6 @@
 use std::env;
+use std::io;
+use std::io::Write;
 use crate::ast::SimpleCommand;
 use crate::shell;
 use nix::unistd::Pid;
@@ -34,7 +36,8 @@ pub fn quit() -> Result<(), std::io::Error> {
 }
 
 pub fn jobs() -> Result<(), std::io::Error> {
-    println!("{}", shell::display_jobs());
+    print!("{}", shell::display_jobs());
+    io::stdout().flush().unwrap();
     Ok(())
 }
 
@@ -89,6 +92,7 @@ fn fg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     for process in job.as_ref().unwrap().borrow().processes.iter() {
         kill(process.pid, Signal::SIGCONT).unwrap();
     }
+    println!("[{}] {}", job.as_ref().unwrap().borrow().job_id, job.as_ref().unwrap().borrow());
 
     jobs::wait_for_job(job);
     Ok(())
@@ -118,6 +122,8 @@ fn bg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     for process in job.as_ref().unwrap().borrow().processes.iter() {
         kill(process.pid, Signal::SIGCONT).unwrap();
     }
+
+    println!("[{}] {}", job.as_ref().unwrap().borrow().job_id, job.as_ref().unwrap().borrow());
 
     Ok(())
 }
