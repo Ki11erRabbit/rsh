@@ -26,13 +26,13 @@ pub fn interrupts_off() {
     let mut sigset = signal::SigSet::all();
     sigset.remove(signal::SIGINT);
     sigset.remove(signal::SIGTSTP);
-    sigset.remove(signal::SIGCHLD);
+    //sigset.remove(signal::SIGCHLD);
 
-    //signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
+    signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
     
 }
 pub fn interrupts_on() {
-    //sig_clear_mask();
+    sig_clear_mask();
 }
 fn is_blocked() -> bool {
     unsafe {
@@ -60,15 +60,11 @@ pub fn get_pending_signal() -> Option<Signal> {
 
 
 extern "C" fn on_sig(sig_num: c_int) {
-    println!("got signal {}", sig_num);
     if is_blocked() {
         return;
     }
     if shell::vforked() {
         return;
-    }
-    if sig_num == signal::SIGTSTP as c_int {
-        println!("got sigtstp");
     }
     unsafe {
         if sig_num == signal::SIGCHLD as c_int {

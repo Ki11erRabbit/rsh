@@ -42,7 +42,7 @@ pub struct Shell {
     background_pid: Pid,
     vforked: bool,
     tty_fd: i32,
-    job_control: JobControl,
+    pub job_control: JobControl,
     traps: HashMap<Signal, String>,
     signal_mode: HashMap<Signal, usize>,//values are S_DFL, S_CATCH, S_IGN, S_HARD_IGN, S_RESET which are defined in trap.rs
     got_sig: Vec<bool>,

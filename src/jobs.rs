@@ -139,7 +139,7 @@ impl JobUtils<Pid> for JobControl {
              }
          } 
 
-        println!("{:?}",job.borrow());
+        //println!("{:?}",job.borrow());
         if matches!(job.borrow().stop_status,WaitStatus::Stopped(_,_)) {
             job.borrow_mut().state = JobState::Stopped;
             self.job_table.borrow_mut().insert(job_id, job);
@@ -186,7 +186,7 @@ impl JobUtils<JobId> for JobControl {
          } 
         
 
-        println!("{:?}",job.borrow());
+        //println!("{:?}",job.borrow());
         if matches!(job.borrow().stop_status,WaitStatus::Stopped(_,_)) {
             job.borrow_mut().state = JobState::Stopped;
             self.job_table.borrow_mut().insert(job_id, job);
@@ -366,7 +366,10 @@ pub fn wait_for_job(job: Option<Rc<RefCell<Job>>>) -> WaitStatus {
     status = job.borrow().stop_status;
 
     if job.borrow().state == JobState::Finished || matches!(job.borrow().stop_status,WaitStatus::Exited(_, _)) {
-        shell::delete_job(job.borrow().job_id);
+        let id = {
+            job.borrow().job_id
+        };
+        shell::delete_job(id);
     }
     status
 }
@@ -409,6 +412,9 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
         WaitStatus::Stopped(id, _) => {
             pid = id;
         },
+        WaitStatus::StillAlive => {
+            return Ok(None);
+        },
         _ => (),
     }
    
@@ -431,7 +437,7 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
                 continue;
             }
             if matches!(process.status, Some(WaitStatus::Stopped(_, _))) {
-                println!("stopped");
+                //println!("stopped");
                 state = JobState::Stopped;
                 stopped = true;
             }
@@ -486,9 +492,13 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
     
     loop {
         let pid = wait_one(block, &job);
+        
+        if pid.is_ok() && pid.as_ref().unwrap().is_none() {
+            break;
+        }
 
         return_pid &= {
-            if pid.is_ok() {
+            if pid.is_ok() && pid.as_ref().unwrap().is_some() {
                 0
             } else {
                 1
@@ -510,6 +520,7 @@ fn do_wait(mut block: usize, job: &Option<Rc<RefCell<Job>>>) -> i32 {
     return_pid
 }
 
+
 pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
     //eprintln!("wait_process");
     let mut old_mask = signal::SigSet::empty();
@@ -521,15 +532,12 @@ pub fn wait_process(block: usize) -> Result<WaitStatus, Errno> {
         trap::set_got_sigchld(false);
         loop {
             result = waitpid(Pid::from_raw(-1), Some(flags));
-            eprintln!("waitpid result: {:?}", result);
+            //eprintln!("waitpid result: {:?}", result);
 
             if result.is_ok() && result.unwrap() == WaitStatus::StillAlive {
-                eprintln!("still alive");
-                panic!();
                 return result;
             }
             if result.is_err() && result.err().unwrap() == Errno::EINTR {
-                return result;
                 continue;
             } 
             else {
