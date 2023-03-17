@@ -1,5 +1,6 @@
 use std::os::unix::io::RawFd;
 use crate::lexer::Lexer;
+use crate::shell;
 use lalrpop_util::lalrpop_mod;
 use std::ffi::CString;
 
@@ -60,6 +61,9 @@ impl PipeSequence {
 
     pub fn iter(&self) -> std::slice::Iter<Command> {
         self.0.iter()
+    }
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<Command> {
+        self.0.iter_mut()
     }
 }
 
@@ -188,6 +192,34 @@ pub struct SimpleCommand {
 }
 
 impl SimpleCommand {
+    pub fn alias_lookup(&mut self) {
+        match shell::lookup_alias(&self.name) {
+            Some(alias) => {
+                let name = alias.0;
+                let args_opt = alias.1;
+                let mut args: Vec<String>;
+                if args_opt.is_some() {
+                    args = args_opt.unwrap();
+                } else {
+                    args = Vec::new();
+                }
+                self.name = name;
+                match &mut self.suffix {
+                    Some(suffix) => {
+                        suffix.word.append(&mut args);
+                    }
+                    None => {
+                        self.suffix = Some(Suffix {
+                            io_redirect: Vec::new(),
+                            word: args,
+                        });
+                    }
+                }
+            }
+            None => {}
+        }
+
+    }
     pub fn argv(&self) -> Vec<CString> {
         let mut argv = Vec::new();
         argv.push(CString::new(self.name.clone()).unwrap());

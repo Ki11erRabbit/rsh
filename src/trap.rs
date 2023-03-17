@@ -8,7 +8,7 @@ use nix::unistd::Pid;
 
 use crate::jobs::{self,JobState};
 use crate::shell;
-use crate::shell::ShellUtils;
+use crate::shell::ShellJobUtils;
 
 const S_DFL: usize = 1;
 const S_CATCH: usize = 2;

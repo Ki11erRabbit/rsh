@@ -30,9 +30,9 @@ pub fn set_exit_status(status: i32) {
 }
 
 
-pub fn eval(ast: &CompleteCommand) -> Result<i32,&'static str> {
+pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
 
-    let list = match &ast.list {
+    let list = match &mut ast.list {
         Some(list) => list,
         None => return Ok(0),
     };
@@ -42,26 +42,26 @@ pub fn eval(ast: &CompleteCommand) -> Result<i32,&'static str> {
     Ok(result)
 }
 
-fn parse_tree(list: &List) -> Result<i32,&'static str> {
+fn parse_tree(list: &mut List) -> Result<i32,&'static str> {
     let mut status = -1;
-    for and_or in list.0.iter() {
-        status = eval_pipeline(&and_or.pipeline)?;
+    for and_or in list.0.iter_mut() {
+        status = eval_pipeline(&mut and_or.pipeline)?;
     } 
 
     Ok(status)
 }
 
-fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
+fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
 
     let background = pipeline.background;
-    let pipeline: &PipeSequence = &pipeline.pipe_sequence;
+    let mut pipeline: &mut PipeSequence = &mut pipeline.pipe_sequence;
     
     let mut processes = Vec::new();
     let mut commands = Vec::new();
 
     //block interrupts
     trap::interrupts_off();
-    for command in pipeline.iter() {
+    for command in pipeline.iter_mut() {
         let process = eval_command(command)?;
         if process.is_none() {
             break;   
@@ -175,7 +175,7 @@ fn eval_pipeline(pipeline: &Pipeline) -> Result<i32,&'static str> {
 }
 
 
-fn eval_command(command: &Command) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
 
     match command {
         Command::SimpleCommand(simple_command) => {
@@ -189,11 +189,13 @@ fn eval_command(command: &Command) -> Result<Option<(Process,SimpleCommand)>,&'s
 
 }
 
-fn eval_simple_command(simple_command: &SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
+fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
    
     if check_if_builtin(&simple_command.name) {
         return eval_builtin(simple_command);
     }
+
+    simple_command.alias_lookup();
 
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
@@ -267,6 +269,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "exit" => true,
         "jobs" => true,
         "fg" | "bg" => true,
+        "alias" | "unalias" => true,
         _ => false,
     }
 }
@@ -287,6 +290,14 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
         },
         "fg" | "bg"=> {
             builtins::fgbg(command).unwrap();
+            Ok(None)
+        },
+        "alias" => {
+            builtins::alias(command).unwrap();
+            Ok(None)
+        },
+        "unalias" => {
+            builtins::unalias(command).unwrap();
             Ok(None)
         },
         _ => {

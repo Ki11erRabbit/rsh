@@ -20,9 +20,13 @@ lazy_static! {
 }
 
 
-pub trait ShellUtils<I> {
+pub trait ShellJobUtils<I> {
     fn delete_job(&mut self, job: I);
     fn get_job(&self, id: I) -> Option<Rc<RefCell<Job>>>;
+}
+
+pub trait ShellAliasUtils<S> {
+    fn add_alias(&mut self, input: S);
 }
 
 
@@ -56,6 +60,7 @@ pub struct Shell {
     path: String,
     readline: Rc<RefCell<Editor<(),FileHistory>>>,
     history_location: String,
+    aliases: HashMap<String, String>,
 }
 
 /*static DEFAULT_KEYS: Vec<KeyEvent> = vec![
@@ -99,6 +104,7 @@ impl Shell {
             signal_mode: HashMap::new(),
             readline,
             history_location: String::new(),
+            aliases: HashMap::new(),
         }
     } 
 
@@ -120,6 +126,28 @@ impl Shell {
 
     pub fn set_history_location(&mut self, location: &str) {
         self.history_location = location.to_string();
+    }
+
+    pub fn lookup_alias(&self, command: &str) -> Option<(String, Option<Vec<String>>)> {
+
+        match self.aliases.get(command) {
+            None => None,
+            Some(alias) => {
+                let mut args = alias.split_whitespace();
+                let command = args.next().unwrap();
+                let args: Vec<String> = args.map(|s| s.to_string()).collect();
+                if args.is_empty() {
+                    Some((command.to_string(), None))
+                } else {
+                    Some((command.to_string(), Some(args)))
+                }
+            }
+        }
+    }
+    pub fn display_aliases(&self) {
+        for (key, value) in &self.aliases {
+            println!("alias {}='{}'", key, value);
+        }
     }
 
     pub fn background_jobs(&self) -> bool {
@@ -153,7 +181,7 @@ impl Shell {
     }
 }
 
-impl ShellUtils<Pid> for Shell {
+impl ShellJobUtils<Pid> for Shell {
     fn delete_job(&mut self, pid: Pid) {
         self.job_control.delete_job(pid);
     }
@@ -163,7 +191,7 @@ impl ShellUtils<Pid> for Shell {
     }
 }
 
-impl ShellUtils<JobId> for Shell {
+impl ShellJobUtils<JobId> for Shell {
     fn delete_job(&mut self, id: JobId) {
         self.job_control.delete_job(id);
     }
@@ -171,6 +199,49 @@ impl ShellUtils<JobId> for Shell {
     fn get_job(&self, id: JobId) -> Option<Rc<RefCell<Job>>> {
         self.job_control.get_job(id)
     }
+}
+
+impl ShellAliasUtils<&str> for Shell {
+    fn add_alias(&mut self, input: &str) {
+        let split = input.split('=').collect::<Vec<&str>>();
+        if split.len() != 2 {
+            eprintln!("Invalid alias");
+            return;
+        }
+        self.aliases.insert(split[0].to_string(), split[1].to_string());
+    }
+}
+impl ShellAliasUtils<(&str, &str)> for Shell {
+    fn add_alias(&mut self, (alias, value): (&str, &str)) {
+        self.aliases.insert(alias.to_string(), value.to_string());
+    }
+}
+
+// can take a single &str or a tuple of &str
+pub fn add_alias<S>(alias: S)
+where Shell: ShellAliasUtils<S>{
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_alias(alias);
+}
+
+pub fn lookup_alias(command: &str) -> Option<(String, Option<Vec<String>>)> {
+    let shell = SHELL.get().borrow();
+    shell.lookup_alias(command)
+}
+
+pub fn clear_aliases() {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.aliases.clear();
+}
+
+pub fn remove_alias(alias: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.aliases.remove(alias);
+}
+
+pub fn display_aliases() {
+    let shell = SHELL.get().borrow();
+    shell.display_aliases();
 }
 
 pub fn save_history() {
@@ -202,7 +273,7 @@ pub fn create_job(processes: Vec<Process>, background: bool) -> Rc<RefCell<Job>>
 // takes a job id or a pid
 pub fn get_job<T>(id: T) -> Option<Rc<RefCell<Job>>>
 where
-    Shell: ShellUtils<T>,
+    Shell: ShellJobUtils<T>,
 {
     let shell = SHELL.get().borrow();
     shell.get_job(id)
@@ -211,7 +282,7 @@ where
 // takes a job id or a pid
 pub fn delete_job<T>(id: T)
 where
-    Shell: ShellUtils<T>,
+    Shell: ShellJobUtils<T>,
 {
     trap::interrupts_off();
     let mut shell = SHELL.get().borrow_mut();

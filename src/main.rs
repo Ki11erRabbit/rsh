@@ -171,11 +171,11 @@ fn interactive_loop() {
         }*/
 
         let lexer = Lexer::new(&input);        
-        let ast = grammar::CompleteCommandParser::new()
+        let mut ast = grammar::CompleteCommandParser::new()
             .parse(&input,lexer)
             .unwrap();
 
-        let _result = eval::eval(&ast);
+        let _result = eval::eval(&mut ast);
 
         //let ast = parser::parse_input(&input).unwrap();
 
@@ -196,22 +196,22 @@ fn script_loop(script_name: &str) {
 
 
         let lexer = Lexer::new(&input);        
-        let ast = grammar::CompleteCommandParser::new()
+        let mut ast = grammar::CompleteCommandParser::new()
             .parse(&input,lexer)
             .unwrap();
 
-        let _result = eval::eval(&ast);
+        let _result = eval::eval(&mut ast);
 
     }
 }
 
 fn read_from_args(input: &str) {
     let lexer = Lexer::new(&input);        
-    let ast = grammar::CompleteCommandParser::new()
+    let mut ast = grammar::CompleteCommandParser::new()
         .parse(&input,lexer)
         .unwrap();
 
-    let _result = eval::eval(&ast);
+    let _result = eval::eval(&mut ast);
 }
 
 fn read_profile() {

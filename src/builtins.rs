@@ -131,3 +131,33 @@ fn bg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
 
     Ok(())
 }
+
+pub fn alias(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() {
+        shell::display_aliases();
+        return Ok(());
+    }
+    
+    for word in command.suffix.as_ref().unwrap().word.iter() {
+        if !word.contains('=') {
+            continue;//TODO: make this read argument
+        }
+        shell::add_alias(word.as_str());
+    }
+
+    Ok(())
+}
+pub fn unalias(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "unalias needs an argument"));
+    }
+    if command.suffix.as_ref().unwrap().word.len() > 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "unalias only takes one argument"));
+    }
+    if command.suffix.as_ref().unwrap().word[0].contains("-a") {
+        shell::clear_aliases();
+        return Ok(());
+    }
+    shell::remove_alias(command.suffix.as_ref().unwrap().word[0].as_str());
+    Ok(())
+}
