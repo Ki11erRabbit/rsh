@@ -4,7 +4,6 @@ mod lexer;
 mod ast;
 mod eval;
 mod jobs;
-mod function;
 mod builtins;
 mod trap;
 mod var;

@@ -1,5 +1,6 @@
 use std::env;
 use std::io;
+use std::process::exit;
 use std::io::Write;
 use crate::ast::SimpleCommand;
 use crate::shell;
@@ -32,9 +33,16 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-pub fn quit() -> Result<(), std::io::Error> {
+pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     shell::save_history();
-    std::process::exit(0);
+    if command.suffix.is_none() {
+        exit(0);
+    }
+    let mut chars = command.suffix.as_ref().unwrap().word[0].chars();
+    chars.next();
+    let code = chars.as_str().parse::<i32>().unwrap();
+
+    exit(code);
 }
 
 pub fn jobs() -> Result<(), std::io::Error> {
@@ -191,3 +199,15 @@ pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
     shell::add_var_context(command.prefix.as_ref().unwrap().assignment[0].as_str());
     Ok(())
 }
+
+pub fn return_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "return needs an argument"));
+    }
+    let mut chars = command.suffix.as_ref().unwrap().word[0].chars();
+    chars.next();
+    let code = chars.as_str().parse::<i32>().unwrap();
+
+    exit(code);
+}
+

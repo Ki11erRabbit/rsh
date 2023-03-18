@@ -76,6 +76,34 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
     if processes.len() == 0 {
         return Ok(0);
     }
+   
+    let mut remove_index: Vec<usize> = Vec::new();
+    
+    if !background {
+        for (index,command) in commands.iter_mut().enumerate() {
+            if shell::is_function(&command.name) {
+                remove_index.push(index);
+            
+                let result = eval_function(command);
+                
+                match result {
+                    Ok(_) => {},
+                    Err(_) => {
+                        eprintln!("{}: Command not found\n", command.name);
+                        std::process::exit(1);
+                    }
+                }
+                std::process::exit(0);
+            }
+
+        }
+        for index in remove_index.iter().rev() {
+            processes.remove(*index);
+            commands.remove(*index);
+        }
+    }
+
+    
 
     let proc_count;
     // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
@@ -172,13 +200,20 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
     }
         if !background {
             //eprintln!("waiting for job");
-            jobs::wait_for_job(Some(job.clone()));
+            let status = jobs::wait_for_job(Some(job.clone()));
             let id;
             {
                 let job = job.borrow();
                 id = job.job_id;
             }
             shell::delete_job(id);
+
+            match status {
+                WaitStatus::Exited(_, status) => {
+                    set_exit_status(status);
+                },
+                _ => (),
+            }
         }
         else {
             println!("[{}] ({}) {}", job.borrow().job_id, job.borrow().processes[0].pid, job.borrow());
@@ -302,6 +337,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "fg" | "bg" => true,
         "alias" | "unalias" => true,
         "export" => true,
+        "return" => true,
         "" => true,
         _ => false
     }
@@ -314,7 +350,7 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
             Ok(None)
         },
         "exit" => {
-            builtins::quit().unwrap();
+            builtins::quit(command).unwrap();
             Ok(None)
         },
         "jobs" => {
@@ -335,6 +371,10 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
         },
         "export" => {
             builtins::export(command).unwrap();
+            Ok(None)
+        },
+        "return" => {
+            builtins::return_cmd(command).unwrap();
             Ok(None)
         },
         "" => {
