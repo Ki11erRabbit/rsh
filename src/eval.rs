@@ -28,6 +28,11 @@ pub fn set_exit_status(status: i32) {
         EXIT_STATUS.store(status, Ordering::Relaxed);
     }
 }
+pub fn get_exit_code() -> i32 {
+    unsafe {
+        EXIT_STATUS.load(Ordering::Relaxed)
+    }
+}
 
 
 pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
@@ -44,10 +49,40 @@ pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
 
 fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
     let mut status = -1;
+
     for and_or in list.iter_mut() {
-        status = eval_pipeline(&mut and_or.pipeline)?;
+
+        status = eval_and_or(and_or)?;
     } 
 
+    Ok(status)
+}
+
+fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
+
+    if and_or.and_or.is_none() {
+        return eval_pipeline(&mut and_or.pipeline);
+    }
+    else {
+        let status = eval_and_or(and_or.and_or.as_mut().unwrap())?;
+        match and_or.conditional_exec {
+            Some(ConditionalExec::And) => {
+                if status != 0 {
+                    return Ok(status);
+                }
+            },
+            Some(ConditionalExec::Or) => {
+                if status == 0 {
+                    return Ok(status);
+                }
+            },
+            None => {
+                return Err("Error: Conditional Execution requires an operator");
+            }
+        }
+    }
+
+    let status = eval_pipeline(&mut and_or.pipeline)?;
     Ok(status)
 }
 
@@ -225,7 +260,7 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
     //unblock interrupts
     trap::interrupts_on();
 
-    Ok(0)
+    Ok(get_exit_code())
 }
 
 
