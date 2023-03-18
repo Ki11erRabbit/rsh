@@ -428,7 +428,8 @@ fn wait_one(block: usize, job: &Option<Rc<RefCell<Job>>>) -> Result<Option<Pid>,
    
     let mut state;
     for (_, jb) in shell::get_job_table().borrow_mut().iter_mut() {
-        if jb.borrow().state == JobState::Finished {
+        let result = jb.try_borrow();
+        if result.is_err() || result.unwrap().state == JobState::Finished {
             continue;
         }
         state = JobState::Finished;

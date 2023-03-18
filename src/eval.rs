@@ -37,14 +37,14 @@ pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
         None => return Ok(0),
     };
 
-    let result = parse_tree(list)?;
+    let result = parse_tree(&mut list.0)?;
 
     Ok(result)
 }
 
-fn parse_tree(list: &mut List) -> Result<i32,&'static str> {
+fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
     let mut status = -1;
-    for and_or in list.0.iter_mut() {
+    for and_or in list.iter_mut() {
         status = eval_pipeline(&mut and_or.pipeline)?;
     } 
 
@@ -76,6 +76,7 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
     if processes.len() == 0 {
         return Ok(0);
     }
+
     let proc_count;
     // this code block is to ensure that the mutable borrow is dropped before sigchld is handled
         let job = shell::create_job(processes, background);
@@ -100,6 +101,9 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
                 }
                 pip = pipe_result.unwrap();
             }
+            
+            
+
             let temp_fork_result = temp_fork(process);
             if temp_fork_result == Ok(Pid::from_raw(0)) {
                 if pgid.is_none() {
@@ -126,14 +130,29 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
                 eval_prefix_suffix(commands[count].prefix_suffix());
                 
                 //println!("executing: {:?}", process.argv);
-                match temp_exec(process) {
-                    Ok(_) => {},
-                    Err(_) => {
-                        eprintln!("{}: Command not found\n", process.cmd);
-                        std::process::exit(1);
-                    },
+                
+                if shell::is_function(&commands[count].name) {
+                    let result = eval_function(&mut commands[count]);
+                    
+                    match result {
+                        Ok(_) => {},
+                        Err(_) => {
+                            eprintln!("{}: Command not found\n", commands[count].name);
+                            std::process::exit(1);
+                        }
+                    }
+                    std::process::exit(0);
                 }
-                unreachable!();
+                else {
+                    match temp_exec(process) {
+                        Ok(_) => {},
+                        Err(_) => { 
+                            eprintln!("{}: Command not found\n", process.cmd);
+                            std::process::exit(1);
+                        },
+                    }
+                    unreachable!();
+                }
             }
             else if matches!(temp_fork_result, Ok(_)) {
                 shell::update_pid_table(job_id, temp_fork_result.unwrap());
@@ -332,37 +351,41 @@ fn check_if_function(cmd_name: &str) -> bool {
     shell::is_function(cmd_name)
 }
 
-fn eval_function(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     let function = shell::get_function(&command.name);
     if function.is_none() {
         return Err("Function not found");
     }
-    let mut background = false;
     shell::push_var_stack();
     shell::add_var_context(&format!("0={}", command.name));
     if command.suffix.is_some() {
         let suffix = command.suffix.as_ref().unwrap();
         for (i, arg) in suffix.word.iter().enumerate() {
             if arg == "&" {
-                background = true;
                 break;
             }
             shell::add_var_context(&format!("{}={}", i+1, arg));
         }
     }
 
-    if background {
-        //TODO fork and run in background
-    }
 
-    eval_compound_command(&function.unwrap().compound_command);
+    eval_compound_command(&mut function.unwrap().compound_command);
+    shell::pop_var_stack();
 
-
-    Ok(None)
+    Ok(0)//todo: change this to return the right exit code
 }
 
-fn eval_compound_command(command: &CompoundCommand) {
+fn eval_compound_command(command: &mut CompoundCommand) {
+    match command {
+        CompoundCommand::BraceGroup(bg) => {
+            eval_compound_list(&mut bg.0);
+        }
+        _ => unimplemented!(),
+    }
+}
 
+fn eval_compound_list(compound_list: &mut CompoundList) {
+    parse_tree(&mut compound_list.0.0);
 }
 
 fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
