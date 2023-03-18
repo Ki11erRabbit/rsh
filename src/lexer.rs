@@ -203,10 +203,27 @@ impl<'input> Lexer<'input> {
         } 
         (&self.input[start..end], end)
     }
+    
+    fn take_until_alt<F>(&mut self, start: usize, mut end: usize,  mut terminate: F)
+        -> (&'input str, usize)
+        where F: FnMut(char) -> bool
+    {
+        while let Some((_, c, _)) = self.lookahead {
+            if terminate(c) {
+                let e = self.advance();
+                end = e.unwrap().2;
+                return (&self.input[start..end], end);
+            } else if let Some((_, _, e)) = self.advance() {
+                end = e;
+            }
+        } 
+        (&self.input[start..end], end)
+    }
     fn take_until_seen_twice<F>(&mut self, start: usize, mut end: usize,  mut terminate: F)
         -> (&'input str, usize)
         where F: FnMut(char) -> bool
     {
+        eprintln!("{:?}",self.input);
         let mut count = 0;
         while let Some((_, c, _)) = self.lookahead {
             if count == 2 {
@@ -230,14 +247,14 @@ impl<'input> Lexer<'input> {
     }
 
     fn single_quote(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
-        let (word, end) = self.take_until(start, end, |c| c == '\'');
-        self.advance();
-        Ok((start, Token::Word(&word[1..]), end))
+        let (word, end) = self.take_until_alt(start, end, |c| c == '\'');
+        //self.advance();
+        Ok((start, Token::Word(&word[0..]), end))
     }
     fn double_quote(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
-        let (word, end) = self.take_until(start, end, |c| c == '"');
-        self.advance();
-        Ok((start, Token::Word(&word[1..]), end))
+        let (word, end) = self.take_until_alt(start, end, |c| c == '"');
+        //self.advance();
+        Ok((start, Token::Word(&word[0..]), end))
     }
 
     fn newline_list(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {

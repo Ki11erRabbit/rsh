@@ -137,6 +137,10 @@ pub fn alias(command: &SimpleCommand) -> Result<(), std::io::Error> {
         shell::display_aliases();
         return Ok(());
     }
+    if command.suffix.as_ref().unwrap().word[0].contains("-p") {
+        shell::display_aliases();
+        return Ok(());
+    }
     
     for word in command.suffix.as_ref().unwrap().word.iter() {
         if !word.contains('=') {
@@ -159,5 +163,31 @@ pub fn unalias(command: &SimpleCommand) -> Result<(), std::io::Error> {
         return Ok(());
     }
     shell::remove_alias(command.suffix.as_ref().unwrap().word[0].as_str());
+    Ok(())
+}
+
+pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word[0].contains("-p") {
+        env::vars().for_each(|(key, value)| {
+            println!("{}={}", key, value);
+        });
+    }
+    
+    for word in command.suffix.as_ref().unwrap().word.iter() {
+        if !word.contains('=') {
+            continue;//TODO: make this read argument
+        }
+        let mut split = word.split('=');
+        let key = split.next().unwrap();
+        let value = split.next().unwrap();
+        shell::add_var(word,-1);
+        env::set_var(key, value);
+    }
+
+    Ok(())
+}
+
+pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    shell::add_var_context(command.prefix.as_ref().unwrap().assignment[0].as_str());
     Ok(())
 }

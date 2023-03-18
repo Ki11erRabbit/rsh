@@ -14,6 +14,7 @@ use rustyline::{Editor,DefaultEditor};
 use rustyline::history::FileHistory;
 use rustyline::config;
 use crate::var::{VarData, VarDataUtils};
+use crate::ast::FunctionBody;
 
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
@@ -61,6 +62,7 @@ pub struct Shell {
     readline: Rc<RefCell<Editor<(),FileHistory>>>,
     history_location: String,
     aliases: HashMap<String, String>,
+    functions: HashMap<String, FunctionBody>,
 }
 
 /*static DEFAULT_KEYS: Vec<KeyEvent> = vec![
@@ -105,6 +107,7 @@ impl Shell {
             readline,
             history_location: String::new(),
             aliases: HashMap::new(),
+            functions: HashMap::new(),
         }
     } 
 
@@ -176,8 +179,32 @@ impl Shell {
         self.var_data.lookup_command(command)
     }
 
+    pub fn push_var_stack(&mut self) {
+        self.var_data.push_var_stack();
+    }
+    pub fn pop_var_stack(&mut self) {
+        self.var_data.pop_var_stack();
+    }
+
     pub fn add_var(&mut self, set: &str, position: isize) {
         self.var_data.add_var(set, position);
+    }
+    pub fn add_var_context(&mut self, set: &str) {
+        let pos = self.var_data.get_current_context_pos();
+        self.var_data.add_var(set, pos);
+    }
+    pub fn expand_variable(&mut self, var: &str) -> Option<String> {
+        self.var_data.lookup_var(var)
+    }
+
+    pub fn add_function(&mut self, name: &str, body: FunctionBody) {
+        self.functions.insert(name.to_string(), body);
+    }
+    pub fn is_function(&self, name: &str) -> bool {
+        self.functions.contains_key(name)
+    }
+    pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
+        self.functions.get(name)
     }
 }
 
@@ -388,9 +415,31 @@ pub fn set_input_args(arg: &str, index: usize) {
     let set = format!("{}={}", index, arg);
 
     shell.add_var(&set,0);
+}
 
-} 
-    
+pub fn push_var_stack() {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.push_var_stack();
+}
+pub fn pop_var_stack() {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.pop_var_stack();
+}
+
+
+pub fn add_var(set: &str, index: isize) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_var(set, index);
+}
+pub fn add_var_context(set: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_var_context(set);
+}
+pub fn expand_var(var: &str) -> Option<String> {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.expand_variable(var)
+}
+
 
 pub fn set_arg_0() {
     let mut shell = SHELL.get().borrow_mut();
@@ -399,5 +448,15 @@ pub fn set_arg_0() {
     shell.add_var(&set,0);
 }
 
-
-
+pub fn add_function(name: &str, body: FunctionBody) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_function(name, body);
+}
+pub fn is_function(name: &str) -> bool {
+    let shell = SHELL.get().borrow();
+    shell.is_function(name)
+}
+pub fn get_function(name: &str) -> Option<FunctionBody> {
+    let shell = SHELL.get().borrow();
+    shell.get_function(name).cloned()
+}

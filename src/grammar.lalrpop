@@ -89,7 +89,50 @@ PipelineSeq: ast::PipeSequence = {
 
 Command: ast::Command = {
     <cmd:SimpleCommand> => ast::Command::SimpleCommand(cmd),
+    <func:FunctionDefinition> => ast::Command::FunctionDefinition(func),
+    <cmd:CompoundCommand> => ast::Command::CompoundCommand(cmd, None),
+
 }
+
+CompoundCommand: ast::CompoundCommand = {
+    <bg:BraceGroup> => ast::CompoundCommand::BraceGroup(bg),
+}
+
+Term: ast::Term = {
+    <term:Term> <sep:Separator> <and_or:AndOr> => {
+        let mut nterm = term;
+        nterm.0.push(and_or);
+        nterm
+    },
+    <and_or:AndOr> => ast::Term(vec![and_or]),
+}
+
+CompoundList: ast::CompoundList = {
+    <term:Term> => ast::CompoundList(term),
+    <nl:"newline_list"> <term:Term> => ast::CompoundList(term),
+    <term:Term> <sep:Separator> => ast::CompoundList(term),
+    <nl:"newline_list"> <term:Term> <sep:Separator> => ast::CompoundList(term),
+}
+
+BraceGroup: ast::BraceGroup = {
+    <lb:"{"> <cl:CompoundList> <rb:"}"> => ast::BraceGroup(cl),
+}
+
+FunctionName: String = {
+    <name:"Word"> => name.to_string(),
+
+}
+
+FunctionDefinition: ast::FunctionDefinition = {
+    <name:FunctionName> <p1:"("> <p2:")"> <nl:"newline_list"> <body:FunctionBody> => ast::FunctionDefinition{name, function_body: body},
+    <name:FunctionName> <p1:"("> <p2:")"> <body:FunctionBody> => ast::FunctionDefinition{name, function_body: body},
+}
+
+FunctionBody: ast::FunctionBody = {
+    <cc:CompoundCommand> => ast::FunctionBody{compound_command: cc, redirect_list: None},
+    <cc:CompoundCommand> <rl:RedirectList> => ast::FunctionBody{compound_command: cc, redirect_list: Some(rl)},
+}
+
 
 SimpleCommand: ast::SimpleCommand = {
     <cmdpf:Prefix> <cmd:CmdWord> <cmdsf:Suffix> => ast::SimpleCommand{prefix: Some(cmdpf), name: cmd, suffix: Some(cmdsf)},
@@ -124,6 +167,11 @@ IOFile: ast::IoFile = {
     <op:"<"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Input, filename: word.to_string()},
     <op:">"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Output, filename: word.to_string()},
     <op:">>"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Append, filename: word.to_string()},
+}
+
+RedirectList: ast::RedirectList = {
+    <ior:IORedirect> => ast::RedirectList(vec![ior]),
+    <rl:RedirectList> <ior:IORedirect> => {let mut nrl = rl; nrl.0.push(ior); nrl},
 }
 
 Assignment: String = {

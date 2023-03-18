@@ -218,8 +218,71 @@ impl SimpleCommand {
             }
             None => {}
         }
-
     }
+
+    pub fn expand_vars(&mut self) {
+        if self.name.starts_with("$") {
+            let mut chars = self.name.chars();
+            chars.next();
+            match shell::expand_var(&chars.collect::<String>()) {
+                Some(name) => {
+                    self.name = name;
+                }
+                None => {}
+            }
+        }
+        if self.suffix.is_none() {
+            return;
+        }
+        for word in self.suffix.as_mut().unwrap().word.iter_mut() {
+            if word.starts_with("$") {
+                let mut chars = word.chars();
+                chars.next();
+                match shell::expand_var(&chars.collect::<String>()) {
+                    Some(expanded) => {
+                        *word = expanded;
+                    }
+                    None => {}
+                }
+            }
+        }
+        /*self.suffix.as_mut().unwrap().word.iter_mut().for_each(|word| {
+            println!("word: {}", word);
+            if word.starts_with("$") {
+                match shell::expand_var(&word[1..]) {
+                    Some(expanded) => {
+                        *word = expanded;
+                    }
+                    None => {}
+                }
+            }
+        });*/
+    }
+
+    pub fn remove_quotes(&mut self) {
+        if (self.name.starts_with("\"") || self.name.starts_with("'")) && (self.name.ends_with("\"") || self.name.ends_with("'")) {
+            let mut chars = self.name.chars();
+            chars.next();
+            chars.next_back();
+
+            self.name = chars.collect::<String>();
+        }
+        if self.suffix.is_none() {
+            return;
+        }
+        for word in self.suffix.as_mut().unwrap().word.iter_mut() {
+            if (word.starts_with("\"") || word.starts_with("'")) && (word.ends_with("\"") || word.ends_with("'")) {
+                let mut chars = word.chars();
+                chars.next();
+                chars.next_back();
+
+                *word = chars.collect::<String>();
+            }
+        }
+    }
+
+
+
     pub fn argv(&self) -> Vec<CString> {
         let mut argv = Vec::new();
         argv.push(CString::new(self.name.clone()).unwrap());
@@ -429,6 +492,26 @@ mod test {
     #[test]
     fn test_parser_env_assignment_redirect_pipe() {
         let input = "FOO=bar echo Hello world > file.txt | cat";
+        let lexer = Lexer::new(input);
+        let ast = grammar::CompleteCommandParser::new()
+            .parse(input,lexer)
+            .unwrap();
+        println!("{:#?}", ast);
+    }
+
+    #[test]
+    fn test_function() {
+        let input = "foo() { echo Hello world; }";
+        let lexer = Lexer::new(input);
+        let ast = grammar::CompleteCommandParser::new()
+            .parse(input,lexer)
+            .unwrap();
+        println!("{:#?}", ast);
+    }
+
+    #[test]
+    fn test_function_alt() {
+        let input = "foo () { echo Hello world }";
         let lexer = Lexer::new(input);
         let ast = grammar::CompleteCommandParser::new()
             .parse(input,lexer)

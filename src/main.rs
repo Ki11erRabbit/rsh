@@ -4,6 +4,7 @@ mod lexer;
 mod ast;
 mod eval;
 mod jobs;
+mod function;
 mod builtins;
 mod trap;
 mod var;
@@ -35,7 +36,9 @@ fn main() {
 
   
     shell::set_arg_0();
-    
+   
+    shell::push_var_stack();
+
     if shell::is_interactive() && input.is_none() {
         trap::set_signal(17);
         trap::set_signal(20);
@@ -174,6 +177,8 @@ fn interactive_loop() {
         let mut ast = grammar::CompleteCommandParser::new()
             .parse(&input,lexer)
             .unwrap();
+       
+        //eprintln!("{:?}", ast);
 
         let _result = eval::eval(&mut ast);
 

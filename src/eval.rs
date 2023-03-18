@@ -181,12 +181,22 @@ fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>
         Command::SimpleCommand(simple_command) => {
             return eval_simple_command(simple_command);
         },
+        Command::FunctionDefinition(function_definition) => {
+            return eval_function_definition(function_definition);
+        },
         _ => {
             return Err("Not implemented");
         }
         
     }
 
+}
+
+fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+    let name = &function_definition.name;
+    let body = function_definition.function_body.clone();
+    shell::add_function(&name, body);
+    Ok(None)
 }
 
 fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
@@ -196,6 +206,8 @@ fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Pro
     }
 
     simple_command.alias_lookup();
+    simple_command.expand_vars();
+    simple_command.remove_quotes();
 
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
@@ -270,7 +282,9 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "jobs" => true,
         "fg" | "bg" => true,
         "alias" | "unalias" => true,
-        _ => false,
+        "export" => true,
+        "" => true,
+        _ => false
     }
 }
 
@@ -300,10 +314,55 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
             builtins::unalias(command).unwrap();
             Ok(None)
         },
+        "export" => {
+            builtins::export(command).unwrap();
+            Ok(None)
+        },
+        "" => {
+            builtins::assignment(command).unwrap();
+            Ok(None)
+        }
         _ => {
-            Err("Not implemented")
+            Err("Not implemented") 
         }
     }
+}
+
+fn check_if_function(cmd_name: &str) -> bool {
+    shell::is_function(cmd_name)
+}
+
+fn eval_function(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+    let function = shell::get_function(&command.name);
+    if function.is_none() {
+        return Err("Function not found");
+    }
+    let mut background = false;
+    shell::push_var_stack();
+    shell::add_var_context(&format!("0={}", command.name));
+    if command.suffix.is_some() {
+        let suffix = command.suffix.as_ref().unwrap();
+        for (i, arg) in suffix.word.iter().enumerate() {
+            if arg == "&" {
+                background = true;
+                break;
+            }
+            shell::add_var_context(&format!("{}={}", i+1, arg));
+        }
+    }
+
+    if background {
+        //TODO fork and run in background
+    }
+
+    eval_compound_command(&function.unwrap().compound_command);
+
+
+    Ok(None)
+}
+
+fn eval_compound_command(command: &CompoundCommand) {
+
 }
 
 fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {

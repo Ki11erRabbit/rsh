@@ -36,13 +36,13 @@ pub trait VarDataUtils<V> {
     fn add_var(&mut self, var: V, position: isize);
 }
 
+#[derive(Debug, Clone)]
 pub struct VarData {
     local_vars: HashMap<String, Var>,
     local_var_stack: Vec<HashMap<String, Var>>,
     var_table: BTreeMap<String, Var>,
     important_vars: ImportantVars,
 }
-
 impl VarData {
     pub fn new() -> Self {
         let mut val = Self {
@@ -55,6 +55,10 @@ impl VarData {
         val.convert_env();
 
         val
+    }
+
+    pub fn get_current_context_pos(&self) -> isize {
+        self.local_var_stack.len() as isize - 1
     }
 
     fn convert_env(&mut self) {
@@ -94,6 +98,29 @@ impl VarData {
             Some(table) => {
                 for (key, _) in table.iter() {
                     self.var_table.remove(key);
+                }
+            }
+        }
+    }
+
+    pub fn lookup_var(&mut self, key: &str) -> Option<String> {
+        let mut ret = self.var_table.get(key);
+        match ret {
+            Some(var) => Some(var.value.clone()),
+            None => {
+                ret = self.local_vars.get(key);
+                match ret {
+                    Some(var) => Some(var.value.clone()),
+                    None => {
+                        for table in self.local_var_stack.iter().rev() {
+                            ret = table.get(key);
+                            match ret {
+                                Some(var) => return Some(var.value.clone()),
+                                None => (),
+                            }
+                        }
+                        None
+                    }
                 }
             }
         }
@@ -153,7 +180,7 @@ impl VarDataUtils<&str> for VarData {
             }).collect::<String>().parse::<usize>().unwrap().to_string()
         }
         else {
-            var.to_string()
+            name.to_string()
         };
 
 
@@ -188,6 +215,7 @@ impl VarDataUtils<(&str, &str)> for VarData {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ImportantVars {
     pub home: String,
     pub pwd: String,
