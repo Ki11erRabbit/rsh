@@ -14,7 +14,7 @@ lalrpop-util = "0.19.8"
 regex = "1.7.1"
 fragile = "2.0.0"
 libc = "0.2.140"
-rustyline = { version = "11.0.0", features = ["with-fuzzy"]}
+rustyline = { version = "11.0.0", features = ["with-fuzzy","derive"]}
 
 [build-dependencies]
 lalrpop = "0.19.8"
