@@ -304,3 +304,28 @@ pub fn sig_suspend(mask: &signal::SigSet) {
         Err(_) => (),
     }*/
 }
+
+//todo: make this more inclusive
+pub fn remove_handlers() {
+    let sigset = signal::SigSet::empty();
+    signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
+
+    let sig_handler = signal::SigHandler::SigDfl;
+
+    let sig_action = signal::SigAction::new(
+        sig_handler,
+        signal::SaFlags::empty(),
+        signal::SigSet::all(),
+    );
+
+    unsafe {
+        signal::sigaction(Signal::SIGINT, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGQUIT, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGTERM, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGTSTP, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGTTIN, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGTTOU, &sig_action).unwrap();
+        signal::sigaction(Signal::SIGCHLD, &sig_action).unwrap();
+    }
+}
+

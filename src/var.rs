@@ -93,6 +93,12 @@ impl VarData {
                 self.local_vars.insert(key.to_string(), value.clone());
             },
             _ => {
+                
+                if self.var_table.contains_key(key) {
+                    self.var_table.insert(key.to_string(), value);
+                    return;
+                }
+
                 if pos < self.local_var_stack.len() as isize {
                     self.local_var_stack[pos as usize].insert(key.to_string(), value.clone());
                 } else {
@@ -102,9 +108,20 @@ impl VarData {
             }
         }
 
-        self.var_table.insert(key.to_string(), value.clone());
+        //self.var_table.insert(key.to_string(), value.clone());
     
 
+    }
+
+    fn check_levels(&mut self, key: &str) -> bool {
+        let mut safe_to_remove = true;
+        for table in self.local_var_stack.iter().rev() {
+            if table.contains_key(key) {
+                safe_to_remove = false;
+                break;
+            }
+        }
+        safe_to_remove
     }
 
     pub fn push_var_stack(&mut self) {
@@ -115,7 +132,9 @@ impl VarData {
             None => (),
             Some(table) => {
                 for (key, _) in table.iter() {
-                    self.var_table.remove(key);
+                    if self.check_levels(key) {
+                        self.var_table.remove(key);
+                    }
                 }
             }
         }

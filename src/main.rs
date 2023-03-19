@@ -1,4 +1,5 @@
 mod shell;
+mod completion;
 //mod parser;
 mod lexer;
 mod ast;

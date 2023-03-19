@@ -617,3 +617,9 @@ fn format_status(result: WaitStatus, sig_only: bool) -> Option<String> {
     }
     return Some(output);
 }
+
+pub fn fork_reset() {
+    trap::remove_handlers(); 
+}
+
+

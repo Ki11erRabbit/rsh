@@ -473,6 +473,8 @@ fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
             return Ok(child);
         },
         ForkResult::Child => {
+            shell::flip_vforked();
+
             return Ok(Pid::from_raw(0));
         }
     }
@@ -484,7 +486,9 @@ fn temp_exec(process: &mut Process) -> Result<i32,String> {
     //set env
     //
     //set assignments
-   
+  
+    jobs::fork_reset();
+
     let argv0 = match shell::lookup_command(&process.argv0) {
         Some(cmd) => cmd,
         None => {

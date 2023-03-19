@@ -10,11 +10,12 @@ use lazy_static::lazy_static;
 use nix::unistd::{getpid, getcwd};
 use nix::sys::signal::Signal;
 use std::os::raw::c_int;
-use rustyline::{Editor,DefaultEditor};
+use rustyline::Editor;
 use rustyline::history::FileHistory;
 use rustyline::config;
 use crate::var::{VarData, VarDataUtils};
 use crate::ast::FunctionBody;
+use crate::completion::CompletionHelper;
 
 
 
@@ -62,7 +63,7 @@ pub struct Shell {
     //misc
     root_pid: Pid,
     path: String,
-    readline: Rc<RefCell<Editor<(),FileHistory>>>,
+    readline: Rc<RefCell<Editor<CompletionHelper,FileHistory>>>,
     history_location: String,
     aliases: HashMap<String, String>,
     functions: HashMap<String, FunctionBody>,
@@ -85,10 +86,13 @@ impl Shell {
             .behavior(config::Behavior::PreferTerm)
             .auto_add_history(true)
             .bell_style(config::BellStyle::Audible)
-            .completion_type(config::CompletionType::Circular)
+            .completion_type(config::CompletionType::Fuzzy)
             .build();
         let readline = Rc::new(RefCell::new(Editor::with_config(config).unwrap()));
-        
+       
+        let helper = CompletionHelper::default();
+
+        readline.borrow_mut().set_helper(Some(helper));
 
 
         Self {
@@ -116,7 +120,7 @@ impl Shell {
         }
     } 
 
-    pub fn get_readline(&self) -> Rc<RefCell<Editor<(),rustyline::history::DefaultHistory>>> {
+    pub fn get_readline(&self) -> Rc<RefCell<Editor<CompletionHelper,rustyline::history::DefaultHistory>>> {
         self.readline.clone()
     }
 
@@ -304,7 +308,7 @@ pub fn set_history_location(location: &str) {
     shell.set_history_location(location);
 }
 
-pub fn get_readline() -> Rc<RefCell<Editor<(),rustyline::history::DefaultHistory>>> {
+pub fn get_readline() -> Rc<RefCell<Editor<CompletionHelper,rustyline::history::DefaultHistory>>> {
     let shell = SHELL.get().borrow();
     shell.get_readline()
 }
