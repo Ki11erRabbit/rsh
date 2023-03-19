@@ -98,7 +98,7 @@ impl Completer for PathCompleter {
 
 fn command_complete(line: &str) -> Vec<Pair> {
     let path = {
-        shell::expand_var("PATH").unwrap()
+        shell::expand_var("PATH").unwrap().clone()
     };
     let paths = path.split(":");
     let mut entries = Vec::new();
@@ -111,13 +111,13 @@ fn command_complete(line: &str) -> Vec<Pair> {
             if !name.starts_with(line) {
                 continue;
             }
-            entries.push(Pair {
-                display: name.clone(),
-                replacement: name,
-            });
+            if entries.contains(&name) {
+                continue;
+            }
+            entries.push(name);
         }
     }
 
-    entries
+    entries.iter().map(|name| Pair { display: name.clone(), replacement: name.to_string()}).collect()
 }
 
