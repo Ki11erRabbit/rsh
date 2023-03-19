@@ -294,9 +294,11 @@ fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Pro
         return eval_builtin(simple_command);
     }
 
+    simple_command.remove_quotes();
+    simple_command.expand_subshells();
     simple_command.alias_lookup();
     simple_command.expand_vars();
-    simple_command.remove_quotes();
+    simple_command.remove_whitespace();
 
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();

@@ -47,6 +47,7 @@ extern {
         "continue"      => lexer::Token::Continue,
         "return"        => lexer::Token::Return,
         "EOF"           => lexer::Token::EOF,
+        "Subshell"      => lexer::Token::Subshell(<&'input str>),
         "Word"          => lexer::Token::Word(<&'input str>),
         "Number"        => lexer::Token::Number(<RawFd>),
     }
@@ -96,6 +97,10 @@ Command: ast::Command = {
 
 CompoundCommand: ast::CompoundCommand = {
     <bg:BraceGroup> => ast::CompoundCommand::BraceGroup(bg),
+}
+
+Subshell: String = {
+    <subshell:"Subshell"> => subshell.to_string(),
 }
 
 Term: ast::Term = {
@@ -153,7 +158,7 @@ Suffix: ast::Suffix = {
     <ior:IORedirect> => ast::Suffix{io_redirect: vec![ior], word: Vec::new()},
     <cmdsf:Suffix> <ior:IORedirect> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.io_redirect.push(ior); ncmdsf},
     <word:"Word"> => ast::Suffix{io_redirect: Vec::new(), word: vec![word.to_string()]},
-    <cmdsf:Suffix> <word:"Word"> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(word.to_string()); ncmdsf},
+    <cmdsf:Suffix> <word:Word> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(word.to_string()); ncmdsf},
     <asm:Assignment> => ast::Suffix{io_redirect: Vec::new(), word: vec![asm]},
     <cmdsf:Suffix> <asm:Assignment> => {let mut ncmdsf = cmdsf.clone(); ncmdsf.word.push(asm); ncmdsf},
 }
@@ -164,9 +169,9 @@ IORedirect: ast::IoRedirect = {
 }
 
 IOFile: ast::IoFile = {
-    <op:"<"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Input, filename: word.to_string()},
-    <op:">"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Output, filename: word.to_string()},
-    <op:">>"> <word:"Word"> => ast::IoFile{redirect_type: ast::RedirectType::Append, filename: word.to_string()},
+    <op:"<"> <word:Word> => ast::IoFile{redirect_type: ast::RedirectType::Input, filename: word.to_string()},
+    <op:">"> <word:Word> => ast::IoFile{redirect_type: ast::RedirectType::Output, filename: word.to_string()},
+    <op:">>"> <word:Word> => ast::IoFile{redirect_type: ast::RedirectType::Append, filename: word.to_string()},
 }
 
 RedirectList: ast::RedirectList = {
@@ -175,20 +180,27 @@ RedirectList: ast::RedirectList = {
 }
 
 Assignment: String = {
-    <var:"Word"> <eq:"="> <val:"Word"> => {
+    <var:"Word"> <eq:"="> <val:Word> => {
         let mut s = String::from(var);
         s.push_str("=");
-        s.push_str(val);
+        s.push_str(val.as_str());
         s
     }
 }
 
 CmdName: String = {
     <cmd:"Word"> => cmd.to_string(),
+    <word:Subshell> => word,
 }
 
 CmdWord: String = {
     <word:"Word"> => word.to_string(),
+    <word:Subshell> => word,
+}
+
+Word: String = {
+    <word:"Word"> => word.to_string(),
+    <word:Subshell> => word,
 }
 
 CmdSepOp: String = {

@@ -17,6 +17,17 @@ enum IdType {
 }
 
 
+fn trim(word: &str) -> String {
+    if (word.starts_with("\"") && word.ends_with("\"")) || (word.starts_with("'") && word.ends_with("'")){
+        let mut chars = word.chars();
+        chars.next();
+        chars.next_back();
+        chars.collect::<String>()
+    }
+    else {
+        word.to_string()
+    }
+}
 
 // this needs to change several variables when changing but for now we won't care
 pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
@@ -189,7 +200,7 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
         let key = split.next().unwrap();
         let value = split.next().unwrap();
         shell::add_var(word,-1);
-        env::set_var(key, value);
+        env::set_var(key, &trim(value));
     }
 
     Ok(())

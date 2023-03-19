@@ -1,4 +1,8 @@
 use std::os::unix::io::RawFd;
+use nix::sys::wait::waitpid;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::os::unix::io::FromRawFd;
 use crate::lexer::Lexer;
 use crate::shell;
 use lalrpop_util::lalrpop_mod;
@@ -191,6 +195,7 @@ pub struct SimpleCommand {
     pub suffix: Option<Suffix>,
 }
 
+lalrpop_mod!(pub grammar);
 impl SimpleCommand {
     pub fn alias_lookup(&mut self) {
         match shell::lookup_alias(&self.name) {
@@ -259,24 +264,193 @@ impl SimpleCommand {
         });*/
     }
 
-    pub fn remove_quotes(&mut self) {
-        if (self.name.starts_with("\"") || self.name.starts_with("'")) && (self.name.ends_with("\"") || self.name.ends_with("'")) {
-            let mut chars = self.name.chars();
+
+    fn create_subshell(chr: char, chars: &mut std::str::Chars) -> String {
+        let mut subshell = String::new();
+
+        if chr == '$' {
+            let Some(c) = chars.next() else { panic!("Unexpected EOF") };
+            subshell.push(chr);
+            if c == '(' {
+                subshell.push(c);
+                while let Some(c) = chars.next() {
+                    if c == ')' {
+                        subshell.push(c);
+                        break;
+                    }
+                    subshell.push(c);
+                }
+                
+
+            }
+        }
+        else {
+            subshell.push(chr);
+            while let Some(c) = chars.next() {
+                if c == '`' {
+                    subshell.push(c);
+                    break;
+                }
+                subshell.push(c);
+            }
+        }
+
+        subshell
+    }
+
+    fn eval_subshell(subshell: &str) -> String {
+
+        let mut chars = subshell.chars();
+
+        if subshell.starts_with("$(") {
+            chars.next();
             chars.next();
             chars.next_back();
+        }
+        else {
+            chars.next();
+            chars.next_back();
+        }
 
-            self.name = chars.collect::<String>();
+        let subshell = &chars.collect::<String>();
+
+        let lexer = Lexer::new(&subshell);
+        let mut ast = grammar::CompleteCommandParser::new()
+            .parse(&subshell,lexer)
+            .unwrap();
+
+        let pip: (RawFd,RawFd) = nix::unistd::pipe().unwrap();
+
+        match unsafe {nix::unistd::fork().expect("failed to fork")} {
+            nix::unistd::ForkResult::Parent { child } => {
+                nix::unistd::close(pip.1).unwrap();
+                let mut buf = String::new();
+                let mut file = unsafe { File::from_raw_fd(pip.0) };
+                waitpid(child, None).unwrap();
+                file.read_to_string(&mut buf).unwrap();
+                nix::unistd::close(pip.0).unwrap();
+                buf.trim().to_string()
+            },
+            nix::unistd::ForkResult::Child => {
+                nix::unistd::dup2(pip.1, 1).unwrap();
+                nix::unistd::dup2(pip.1, 2).unwrap();
+                nix::unistd::close(pip.1).unwrap();
+                nix::unistd::close(pip.0).unwrap();
+                let _ = crate::eval::eval(&mut ast);
+                std::process::exit(0);
+            }
+        }
+    }
+
+
+    pub fn remove_whitespace(&mut self) {
+        let temp = self.name.clone();
+        let mut words = temp.split_whitespace().collect::<Vec<&str>>();
+        self.name = words.remove(0).to_string();
+
+        if self.suffix.is_none() {
+            self.suffix = Some(Suffix {
+                io_redirect: Vec::new(),
+                word: words.iter().map(|word| word.to_string()).collect(),
+            });
+            return;
+        }
+
+        let mut words = words.iter().map(|word| word.to_string()).collect::<Vec<String>>();
+
+        for word in self.suffix.as_ref().unwrap().word.iter() {
+            let temp_words = word.split_whitespace().collect::<Vec<&str>>();
+            
+            words.append(&mut temp_words.iter().map(|word| word.to_string()).collect::<Vec<String>>());
+        }
+
+        self.suffix.as_mut().unwrap().word = words;
+
+    }
+
+
+    /*
+     * The logic of this is disgusting since other shells will split at whitespace and we do it
+     * here. We basically rip apart every string in both the name and suffix and then recombine
+     * them.
+     * 
+     */
+    pub fn expand_subshells(&mut self) {
+        if (self.name.starts_with("$(") && self.name.ends_with(")")) || (self.name.starts_with("`") && self.name.ends_with("`")) {
+            self.name = Self::eval_subshell(&self.name);
+        }
+
+        let temp = self.name.clone();
+        let mut words = temp.split_whitespace().collect::<Vec<&str>>();
+        self.name = words.remove(0).to_string();
+
+        if self.suffix.is_none() {
+            self.suffix = Some(Suffix {
+                io_redirect: Vec::new(),
+                word: words.iter().map(|word| word.to_string()).collect(),
+            });
+            return;
+        }
+
+        let mut words = words.iter().map(|word| word.to_string()).collect::<Vec<String>>();
+
+        for word in self.suffix.as_mut().unwrap().word.iter_mut() {
+            if (word.starts_with("$(") && word.ends_with(")")) || (word.starts_with("`") && word.ends_with("`")) {
+                *word = Self::eval_subshell(word);
+            }
+        }
+
+        for word in self.suffix.as_ref().unwrap().word.iter() {
+            let temp_words = word.split_whitespace().collect::<Vec<&str>>();
+            
+            words.append(&mut temp_words.iter().map(|word| word.to_string()).collect::<Vec<String>>());
+        }
+
+        self.suffix.as_mut().unwrap().word = words;
+
+
+    }
+
+    fn cut_quotes(word: &mut String) {
+        let mut chars = word.chars();
+        let mut try_expand_subshell = false;
+        if chars.next() == Some('"') {
+            try_expand_subshell = true;
+        }
+        chars.next_back();
+
+
+        if try_expand_subshell {
+            let mut new_word = String::new();
+            while let Some(chr) = chars.next()  {
+                if chr == '$' || chr == '`' {
+                    let subshell = Self::create_subshell(chr,&mut chars);
+                    
+                    new_word = new_word + &Self::eval_subshell(&subshell);
+                }
+                else {
+                    new_word.push(chr);
+                }
+                
+            }
+
+            *word = new_word;
+            return;
+        }
+
+        *word = chars.collect::<String>();
+    }
+
+    pub fn remove_quotes(&mut self) {
+        if (self.name.starts_with("\"") || self.name.starts_with("'")) && (self.name.ends_with("\"") || self.name.ends_with("'")) {
+            Self::cut_quotes(&mut self.name);
         }
         if self.suffix.is_none() {
             return;
         }
         for word in self.suffix.as_mut().unwrap().word.iter_mut() {
             if (word.starts_with("\"") || word.starts_with("'")) && (word.ends_with("\"") || word.ends_with("'")) {
-                let mut chars = word.chars();
-                chars.next();
-                chars.next_back();
-
-                *word = chars.collect::<String>();
+                Self::cut_quotes(word);
             }
         }
     }
@@ -300,12 +474,12 @@ impl SimpleCommand {
         let mut cmd = String::new();
         cmd.push_str(&self.name);
 
-        if self.suffix.is_some() {
+        /*if self.suffix.is_some() {
             for word in self.suffix.as_ref().unwrap().word.iter() {
                 cmd.push_str(" ");
                 cmd.push_str(&word);
             }
-        }
+        }*/
 
         cmd
     }

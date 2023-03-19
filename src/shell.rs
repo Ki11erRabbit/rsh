@@ -206,6 +206,19 @@ impl Shell {
     pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
         self.functions.get(name)
     }
+
+
+    fn trim(word: &str) -> String {
+        if (word.starts_with("\"") && word.ends_with("\"")) || (word.starts_with("'") && word.ends_with("'")){
+            let mut chars = word.chars();
+            chars.next();
+            chars.next_back();
+            chars.collect::<String>()
+        }
+        else {
+            word.to_string()
+        }
+    }
 }
 
 impl ShellJobUtils<Pid> for Shell {
@@ -235,12 +248,12 @@ impl ShellAliasUtils<&str> for Shell {
             eprintln!("Invalid alias");
             return;
         }
-        self.aliases.insert(split[0].to_string(), split[1].to_string());
+        self.aliases.insert(split[0].to_string(), Self::trim(split[1]));
     }
 }
 impl ShellAliasUtils<(&str, &str)> for Shell {
     fn add_alias(&mut self, (alias, value): (&str, &str)) {
-        self.aliases.insert(alias.to_string(), value.to_string());
+        self.aliases.insert(alias.to_string(), Self::trim(value));
     }
 }
 

@@ -145,6 +145,17 @@ impl VarData {
         None
     }
 
+    fn trim(word: &str) -> String {
+        if (word.starts_with("\"") && word.ends_with("\"")) || (word.starts_with("'") && word.ends_with("'")){
+            let mut chars = word.chars();
+            chars.next();
+            chars.next_back();
+            chars.collect::<String>()
+        }
+        else {
+            word.to_string()
+        }
+    }
     
 }
 
@@ -165,14 +176,14 @@ impl VarDataUtils<&str> for VarData {
     }
 
     fn add_var(&mut self, var: &str,pos: isize) {
-        let (name, value) = if var.contains("=") {
+        let (name, mut value) = if var.contains("=") {
             let mut split = var.split("=");
             (split.next().unwrap(), split.next().unwrap())
         } else {
             (var, "")
         };
 
-        let var_struct = Var::new(name, value);
+        let var_struct = Var::new(name, &Self::trim(value));
     
         let key = if var.chars().nth(0).unwrap().to_digit(10).is_some() {
             var.chars().filter(|c| {
@@ -199,7 +210,7 @@ impl VarDataUtils<(&str, &str)> for VarData {
     }
 
     fn add_var(&mut self, (name, value): (&str, &str), pos: isize) {
-        let var_struct = Var::new(name, value);
+        let var_struct = Var::new(name, &Self::trim(value));
 
         let key = if name.chars().nth(0).unwrap().to_digit(10).is_some() {
             name.chars().filter(|c| {

@@ -53,6 +53,7 @@ pub enum Token<'input> {
     Continue,
     Return,
     EOF,
+    Subshell(&'input str),
     Number(RawFd),
     Word(&'input str),
 }
@@ -106,10 +107,15 @@ impl<'input> Iterator for Lexer<'input> {
                         _ => Some(Ok((start, Token::Ampersand, end))),
                     }
                 },
-                '`' => Some(Ok((start, Token::BackTick, end))),
+                '`' => Some(self.subshell(chr,start, end)),
                 '$' => {
                     match self.lookahead {
-                        Some((_, '(', _)) | Some((_, '{', _)) => {
+                        Some((_, '(', _)) => {
+                            Some(self.subshell(chr,start, end))
+                        }
+
+                        Some((_, '{', _)) => {
+
                             Some(Ok((start, Token::Dollar, end)))
                         }
                          _ => Some(self.word(start,end)),
@@ -255,6 +261,24 @@ impl<'input> Lexer<'input> {
         let (word, end) = self.take_until_alt(start, end, |c| c == '"');
         //self.advance();
         Ok((start, Token::Word(&word[0..]), end))
+    }
+
+    fn subshell(&mut self, chr: char, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
+
+        match chr {
+            '$' => {
+                let (word, end) = self.take_until_alt(start, end, |c| c == ')');
+
+                return Ok((start, Token::Word(&word[0..]), end));
+            },
+            '`' => {
+                let (word, end) = self.take_until_alt(start, end, |c| c == '`');
+                return Ok((start, Token::Word(&word[0..]), end));
+            },
+            _ => {
+                unreachable!();
+            }
+        }
     }
 
     fn newline_list(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
