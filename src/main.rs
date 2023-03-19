@@ -24,7 +24,6 @@ lalrpop_mod!(pub grammar);
 
 use nix::errno::Errno;
 use rustyline::error::ReadlineError;
-use rustyline::{Editor, Cmd};
 
 
 fn main() {
@@ -136,17 +135,17 @@ fn parse_dash_arg(arg: &str) -> bool {
 
 fn interactive_loop() {
 
-    let rl = shell::get_readline();
 
+    let rl = shell::get_readline();
     //rl.borrow_mut().bind_sequence(rustyline::Event::KeySeq(vec![rustyline::KeyEvent::ctrl('z')]), rustyline::Cmd::Suspend);
 
     loop {
         let input;
 
-        let readline = rl.borrow_mut().readline("$ ");
+        let readline = rl.borrow_mut().readline(shell::expand_var("PS1").unwrap().as_str());
         match readline {
             Ok(line) => {
-                rl.borrow_mut().add_history_entry(line.as_str());
+                //rl.borrow_mut().add_history_entry(line.as_str());
                 input = line;
             },
             Err(ReadlineError::Interrupted) => {

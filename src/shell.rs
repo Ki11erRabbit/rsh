@@ -16,6 +16,9 @@ use rustyline::config;
 use crate::var::{VarData, VarDataUtils};
 use crate::ast::FunctionBody;
 
+
+
+
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
 }
@@ -80,9 +83,11 @@ impl Shell {
         }));*/
         let config = config::Builder::new()
             .behavior(config::Behavior::PreferTerm)
-            .completion_type(config::CompletionType::Fuzzy)
+            .auto_add_history(true)
+            .bell_style(config::BellStyle::Audible)
+            .completion_type(config::CompletionType::Circular)
             .build();
-        let readline = Rc::new(RefCell::new(DefaultEditor::with_config(config).unwrap()));
+        let readline = Rc::new(RefCell::new(Editor::with_config(config).unwrap()));
         
 
 

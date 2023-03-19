@@ -213,7 +213,7 @@ impl Display for JobControl {
     fn fmt(&self, f: &mut Formatter) -> Result<(), Error> {
         let mut s = String::new();
         for (id, job) in self.job_table.borrow().iter() {
-            s.push_str(&format!("[{}]+ {}\n",id, job.borrow()));
+            s.push_str(&format!("[{}] {}{}\n",id, shell::expand_var("PS4").unwrap(), job.borrow()));
         }
         write!(f, "{}", s)
     }
@@ -590,14 +590,14 @@ fn format_status(result: WaitStatus, sig_only: bool) -> Option<String> {
                 Some(job) => job,
                 None => return None,
             };
-            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+            output.push_str(&format!("[{}] {}\t\t{} ", job.borrow().job_id,shell::expand_var("PS4").unwrap(), job.borrow()));
         },
         WaitStatus::Signaled(pid, signal, dump) => {
             let job = match shell::get_job(pid) {
                 Some(job) => job,
                 None => return None,
             };
-            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+            output.push_str(&format!("[{}] {}\t\t{} ", job.borrow().job_id,shell::expand_var("PS4").unwrap(), job.borrow()));
             if dump {
                 output.push_str(&format!("({}) (core dumped)", signal));
             }
@@ -610,7 +610,7 @@ fn format_status(result: WaitStatus, sig_only: bool) -> Option<String> {
                 Some(job) => job,
                 None => return None,
             };
-            output.push_str(&format!("[{}] +\t\t{} ", job.borrow().job_id, job.borrow()));
+            output.push_str(&format!("[{}] {}\t\t{} ", job.borrow().job_id,shell::expand_var("PS4").unwrap(), job.borrow()));
             output.push_str(&format!("({})", signal));
         },
         _ => return None,

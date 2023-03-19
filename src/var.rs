@@ -41,19 +41,34 @@ pub struct VarData {
     local_vars: HashMap<String, Var>,
     local_var_stack: Vec<HashMap<String, Var>>,
     var_table: BTreeMap<String, Var>,
-    important_vars: ImportantVars,
+    //important_vars: ImportantVars,
 }
+
+
+
 impl VarData {
     pub fn new() -> Self {
         let mut val = Self {
             local_vars: HashMap::new(),
             local_var_stack: Vec::new(),
             var_table: BTreeMap::new(),
-            important_vars: ImportantVars::default(),
+            //important_vars: ImportantVars::default(),
         };
 
         val.convert_env();
-
+       
+        let ps1 = if Uid::is_root(getuid()) {
+            SUP_USER_PROMPT.to_string()
+        } else {
+            REG_USER_PROMPT.to_string()
+        };
+        val.add_var("PS1", Var::new("PS1", &ps1), -1);
+        val.add_var("PS2", Var::new("PS2", "> "), -1);
+        val.add_var("PS4", Var::new("PS4", "+ "), -1);
+        val.add_var("PPID", Var::new("PPID", &getppid().to_string()), -1);
+        val.add_var("PID", Var::new("PID", &getpid().to_string()), -1);
+        val.add_var("PATH", Var::new("PATH", "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"), -1);
+        
         val
     }
 
@@ -68,6 +83,9 @@ impl VarData {
         }
     }
 
+    fn path(&self) -> Vec<&str> {
+        self.lookup_internal("PATH").unwrap().split(':').collect()
+    }
 
     fn add_var(&mut self, key: &str, value: Var, pos: isize) {
         match pos {
@@ -102,20 +120,20 @@ impl VarData {
             }
         }
     }
-
-    pub fn lookup_var(&mut self, key: &str) -> Option<String> {
+    
+    fn lookup_internal(&self, key: &str) -> Option<&str> {
         let mut ret = self.var_table.get(key);
         match ret {
-            Some(var) => Some(var.value.clone()),
+            Some(var) => Some(&var.value),
             None => {
                 ret = self.local_vars.get(key);
                 match ret {
-                    Some(var) => Some(var.value.clone()),
+                    Some(var) => Some(&var.value),
                     None => {
                         for table in self.local_var_stack.iter().rev() {
                             ret = table.get(key);
                             match ret {
-                                Some(var) => return Some(var.value.clone()),
+                                Some(var) => return Some(&var.value),
                                 None => (),
                             }
                         }
@@ -126,8 +144,12 @@ impl VarData {
         }
     }
 
+    pub fn lookup_var(&self, key: &str) -> Option<String> {
+        self.lookup_internal(key).map(|s| s.to_string())
+    }
+
     pub fn lookup_command(&self, cmd: &str) -> Option<String> {
-        for path in self.important_vars.path.iter() {
+        for path in self.path().iter() {
             let path = format!("{}/{}", path, cmd);
             
             let metadata = metadata(&path);
@@ -171,12 +193,12 @@ impl VarDataUtils<&str> for VarData {
 
         env::set_var("PATH", path);
 
-        self.important_vars.path = path.split(":").map(|s| s.to_string()).collect();
+        //self.important_vars.path = path.split(":").map(|s| s.to_string()).collect();
 
     }
 
     fn add_var(&mut self, var: &str,pos: isize) {
-        let (name, mut value) = if var.contains("=") {
+        let (name, value) = if var.contains("=") {
             let mut split = var.split("=");
             (split.next().unwrap(), split.next().unwrap())
         } else {
@@ -205,7 +227,7 @@ impl VarDataUtils<(&str, &str)> for VarData {
     fn update_path(&mut self, (key, path): (&str, &str)) {
         if key == "PATH" {
             env::set_var("PATH", path);
-            self.important_vars.path = path.split(":").map(|s| s.to_string()).collect();
+            //self.important_vars.path = path.split(":").map(|s| s.to_string()).collect();
         }
     }
 
