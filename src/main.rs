@@ -174,9 +174,14 @@ fn interactive_loop() {
         }*/
 
         let lexer = Lexer::new(&input);        
-        let mut ast = grammar::CompleteCommandParser::new()
-            .parse(&input,lexer)
-            .unwrap();
+        let mut ast = match grammar::CompleteCommandParser::new()
+            .parse(&input,lexer) {
+                Ok(ast) => ast,
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    continue;
+                }
+            };
        
         //eprintln!("{:?}", ast);
 

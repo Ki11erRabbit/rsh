@@ -226,6 +226,26 @@ impl SimpleCommand {
     }
 
     pub fn expand_vars(&mut self) {
+
+        if self.prefix.is_some() {
+            for word in self.prefix.as_mut().unwrap().assignment.iter_mut() {
+                if word.contains("$") {
+                    let mut split = word.split("=");
+                    let var = split.next().unwrap();
+                    let val = split.next().unwrap();
+                    let val = match shell::expand_var(val) {
+                        Some(expanded) => {
+                            expanded
+                        }
+                        None => {
+                            val.to_string()
+                        }
+                    };
+                    *word = format!("{}={}", var, val);
+                }
+            }
+        }
+
         if self.name.starts_with("$") {
             let mut chars = self.name.chars();
             chars.next();
@@ -342,30 +362,74 @@ impl SimpleCommand {
         }
     }
 
+    fn recombine_double_quotes(words: &mut Vec<&str>) -> Vec<String>{
+        let mut new_words = Vec::new();
+        let mut in_quotes = false;
+        let mut index = 0;
+        for word in words.iter() {
+            if word.starts_with("\"") {
+                in_quotes = true;
+                new_words.push(word.to_string());
+            }
+            else if in_quotes {
+                new_words[index].push_str(" ");
+                new_words[index].push_str(word);
+                if word.ends_with("\"") {
+                    in_quotes = false;
+                }
+            }
+            else {
+                index += 1;
+                new_words.push(word.to_string());
+            }
+        }
+        new_words
+    }
+
 
     pub fn remove_whitespace(&mut self) {
+        //eprintln!("suffix: {:?}", self.suffix);
         let temp = self.name.clone();
-        let mut words = temp.split_whitespace().collect::<Vec<&str>>();
-        self.name = words.remove(0).to_string();
+        let mut words;
+        if !temp.contains('\''){
+            words = temp.split_whitespace().collect::<Vec<&str>>();
+            let mut new_words = if temp.contains("\"") {
+                Self::recombine_double_quotes(&mut words)
+            } 
+            else {
+                words.iter().map(|word| word.to_string()).collect::<Vec<String>>()
+            };
 
-        if self.suffix.is_none() {
-            self.suffix = Some(Suffix {
-                io_redirect: Vec::new(),
-                word: words.iter().map(|word| word.to_string()).collect(),
-            });
-            return;
+            self.name = new_words.remove(0);
+
+            if self.suffix.is_none() {
+                self.suffix = Some(Suffix {
+                    io_redirect: Vec::new(),
+                    word: new_words,
+                });
+                return;
+            }
+            else {
+                let mut words = new_words;
+                for word in self.suffix.as_ref().unwrap().word.iter() {
+                    if word.contains('\'') {
+                        words.push(word.to_string());
+                    }
+                    else {
+                        let mut temp_words = word.split_whitespace().collect::<Vec<&str>>();
+                        let mut new_words = if word.contains("\"") {
+                            Self::recombine_double_quotes(&mut temp_words)
+                        } 
+                        else {
+                            temp_words.iter().map(|word| word.to_string()).collect::<Vec<String>>()
+                        };
+                        words.append(&mut new_words);
+                    }
+                }
+
+                self.suffix.as_mut().unwrap().word = words;
+            }
         }
-
-        let mut words = words.iter().map(|word| word.to_string()).collect::<Vec<String>>();
-
-        for word in self.suffix.as_ref().unwrap().word.iter() {
-            let temp_words = word.split_whitespace().collect::<Vec<&str>>();
-            
-            words.append(&mut temp_words.iter().map(|word| word.to_string()).collect::<Vec<String>>());
-        }
-
-        self.suffix.as_mut().unwrap().word = words;
-
     }
 
 
@@ -376,37 +440,53 @@ impl SimpleCommand {
      * 
      */
     pub fn expand_subshells(&mut self) {
+        //eprintln!("expand_subshells");
+        if self.prefix.is_some() {
+            for word in self.prefix.as_mut().unwrap().assignment.iter_mut() {
+                if (word.contains("$(") && word.ends_with(")")) || (word.contains("`") && word.ends_with("`")) {
+                    let mut split = word.split("=");
+                    let var = split.next().unwrap();
+                    let val = split.next().unwrap();
+                    let val = Self::eval_subshell(val);
+                    *word = format!("{}={}", var, val);
+                }
+            }
+        }
+
         if (self.name.starts_with("$(") && self.name.ends_with(")")) || (self.name.starts_with("`") && self.name.ends_with("`")) {
             self.name = Self::eval_subshell(&self.name);
         }
 
-        let temp = self.name.clone();
-        let mut words = temp.split_whitespace().collect::<Vec<&str>>();
-        self.name = words.remove(0).to_string();
+        //let temp = self.name.clone();
+        //let mut words = temp.split_whitespace().collect::<Vec<&str>>();
+        //self.name = words.remove(0).to_string();
 
-        if self.suffix.is_none() {
+        /*if self.suffix.is_none() {
             self.suffix = Some(Suffix {
                 io_redirect: Vec::new(),
                 word: words.iter().map(|word| word.to_string()).collect(),
             });
             return;
+        }*/
+
+        //let mut words = words.iter().map(|word| word.to_string()).collect::<Vec<String>>();
+
+        if self.suffix.is_none() {
+            return;
         }
-
-        let mut words = words.iter().map(|word| word.to_string()).collect::<Vec<String>>();
-
         for word in self.suffix.as_mut().unwrap().word.iter_mut() {
             if (word.starts_with("$(") && word.ends_with(")")) || (word.starts_with("`") && word.ends_with("`")) {
                 *word = Self::eval_subshell(word);
             }
         }
 
-        for word in self.suffix.as_ref().unwrap().word.iter() {
+        /*for word in self.suffix.as_ref().unwrap().word.iter() {
             let temp_words = word.split_whitespace().collect::<Vec<&str>>();
             
             words.append(&mut temp_words.iter().map(|word| word.to_string()).collect::<Vec<String>>());
-        }
+        }*/
 
-        self.suffix.as_mut().unwrap().word = words;
+        //self.suffix.as_mut().unwrap().word = words;
 
 
     }
@@ -441,15 +521,28 @@ impl SimpleCommand {
         *word = chars.collect::<String>();
     }
 
-    pub fn remove_quotes(&mut self) {
-        if (self.name.starts_with("\"") || self.name.starts_with("'")) && (self.name.ends_with("\"") || self.name.ends_with("'")) {
+    pub fn remove_double_quotes(&mut self) {
+        if (self.name.starts_with("\"")) && (self.name.ends_with("\"")) {
             Self::cut_quotes(&mut self.name);
         }
         if self.suffix.is_none() {
             return;
         }
         for word in self.suffix.as_mut().unwrap().word.iter_mut() {
-            if (word.starts_with("\"") || word.starts_with("'")) && (word.ends_with("\"") || word.ends_with("'")) {
+            if (word.starts_with("\"")) && (word.ends_with("\"")) {
+                Self::cut_quotes(word);
+            }
+        }
+    }
+    pub fn remove_single_quotes(&mut self) {
+        if (self.name.starts_with("'")) && (self.name.ends_with("'")) {
+            Self::cut_quotes(&mut self.name);
+        }
+        if self.suffix.is_none() {
+            return;
+        }
+        for word in self.suffix.as_mut().unwrap().word.iter_mut() {
+            if (word.starts_with("'")) && (word.ends_with("'")) {
                 Self::cut_quotes(word);
             }
         }

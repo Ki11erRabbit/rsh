@@ -306,11 +306,12 @@ fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Pro
         return eval_builtin(simple_command);
     }
 
-    simple_command.remove_quotes();
+    simple_command.remove_double_quotes();
     simple_command.expand_subshells();
     simple_command.alias_lookup();
     simple_command.expand_vars();
     simple_command.remove_whitespace();
+    simple_command.remove_single_quotes();
 
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
@@ -445,14 +446,18 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     if function.is_none() {
         return Err("Function not found");
     }
+    //eprintln!("{:?}", function.clone().unwrap());
+    //eprintln!("{:?}", command);
     shell::push_context_new();
     shell::add_var_context(&format!("0={}", command.name));
+    //eprintln!("0={}", command.name);
     if command.suffix.is_some() {
         let suffix = command.suffix.as_ref().unwrap();
         for (i, arg) in suffix.word.iter().enumerate() {
             if arg == "&" {
                 break;
             }
+            //eprintln!("{}={}", i+1, arg);
             shell::add_var_context(&format!("{}={}", i+1, arg));
         }
     }

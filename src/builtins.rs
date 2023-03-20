@@ -49,9 +49,9 @@ pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() {
         exit(0);
     }
-    let mut chars = command.suffix.as_ref().unwrap().word[0].chars();
-    chars.next();
-    let code = chars.as_str().parse::<i32>().unwrap();
+    //let chars = command.suffix.as_ref().unwrap().word[0].chars();
+    //chars.next();
+    let code = command.suffix.as_ref().unwrap().word[0].parse::<i32>().unwrap();
 
     exit(code);
 }
@@ -243,6 +243,9 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
 }
 
 pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
+
+
+
     shell::add_var_context(command.prefix.as_ref().unwrap().assignment[0].as_str());
     Ok(())
 }
