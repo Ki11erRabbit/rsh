@@ -33,6 +33,7 @@ impl ToString for Var {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ContextManager {
     context_stack: Vec<Context>,
     exported_contexts: HashMap<String,Context>,
@@ -248,7 +249,7 @@ pub trait ContextUtils<V> {
     fn add_var(&mut self, var: V);
 }
 
-
+#[derive(Debug, Clone)]
 pub struct Context {
     pub vars: HashMap<String, Var>,
     functions: HashMap<String, FunctionBody>,

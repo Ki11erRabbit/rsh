@@ -204,6 +204,12 @@ impl Shell {
         self.context_manager.pop_context()
     } 
 
+    pub fn add_context(&mut self, namespace:&str, context: Context) {
+        self.context_manager.add_context(namespace,context);
+    }
+    pub fn get_current_context(&self) -> Context {//todo: get rid of clone
+        self.context_manager.get_context().clone()
+    }
     /*pub fn push_var_stack(&mut self) {
         self.var_data.push_var_stack();
     }
@@ -451,6 +457,14 @@ pub fn pop_context() {
     shell.pop_context();
 }
 
+pub fn add_context(namespace: &str, context: Context) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_context(namespace, context);
+}
+pub fn get_current_context() -> Context {
+    let shell = SHELL.get().borrow();
+    shell.get_current_context()
+}
 
 pub fn add_var(set: &str, index: usize) {
     let mut shell = SHELL.get().borrow_mut();
@@ -470,7 +484,7 @@ pub fn set_arg_0() {
     let mut shell = SHELL.get().borrow_mut();
     let set = format!("0={}", shell.script_name);
 
-    shell.add_var(&set,0);
+    shell.add_var(&set,1);
 }
 
 pub fn add_function(name: &str, body: FunctionBody) {

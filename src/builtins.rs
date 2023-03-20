@@ -191,6 +191,42 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
             println!("{}={}", key, value);
         });
     }
+
+    let suffix = command.suffix.as_ref().unwrap();
+
+    if suffix.word[0].as_str() == "context" {
+        if suffix.word.len() < 2 {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "export context needs an argument"));
+        }
+        if suffix.word[1].as_str().contains('=') {
+            let mut split = suffix.word[1].split('=');
+            let namespace = split.next().unwrap();
+            let file = split.next().unwrap();
+            
+            if file == "self" {
+                let context = shell::get_current_context();
+
+                shell::add_context(&namespace, context.clone());
+                return Ok(());
+            }
+            else {
+                //TODO: open file, parse it, and add its data as a context
+            }
+        }
+        else {
+            if suffix.word[1].as_str() == "self" {
+                let context = shell::get_current_context();
+
+                let namespace = &context.get_var("0").unwrap().value;
+
+                shell::add_context(&namespace, context.clone());
+                return Ok(());
+            }
+            else {
+                //TODO: open file, parse it, and add its data as a context
+            }
+        }
+    }
     
     for word in command.suffix.as_ref().unwrap().word.iter() {
         if !word.contains('=') {

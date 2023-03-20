@@ -35,9 +35,9 @@ fn main() {
     let input = parse_args(args);
 
   
-    shell::set_arg_0();
    
     shell::push_context_new();
+    shell::set_arg_0();
 
     if shell::is_interactive() && input.is_none() {
         trap::set_signal(17);
