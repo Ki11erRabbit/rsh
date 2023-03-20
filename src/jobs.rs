@@ -177,6 +177,11 @@ impl JobUtils<JobId> for JobControl {
             Some(job) => job,
             None => return,
         };
+
+        if job.borrow().processes.len() == 0 {
+            return;
+        }
+
          {
              let mut job = job.borrow_mut();
              if matches!(job.processes[0].status, Some(WaitStatus::Stopped(_,_))) {

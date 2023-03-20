@@ -199,7 +199,7 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
         let mut split = word.split('=');
         let key = split.next().unwrap();
         let value = split.next().unwrap();
-        shell::add_var(word,-1);
+        shell::add_var(word,0);
         env::set_var(key, &trim(value));
     }
 

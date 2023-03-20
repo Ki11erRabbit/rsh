@@ -1,5 +1,6 @@
 mod shell;
 mod completion;
+mod context;
 //mod parser;
 mod lexer;
 mod ast;
@@ -36,7 +37,7 @@ fn main() {
   
     shell::set_arg_0();
    
-    shell::push_var_stack();
+    shell::push_context_new();
 
     if shell::is_interactive() && input.is_none() {
         trap::set_signal(17);

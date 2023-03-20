@@ -15,6 +15,7 @@ use rustyline::history::FileHistory;
 use rustyline::config;
 use crate::var::{VarData, VarDataUtils};
 use crate::ast::FunctionBody;
+use crate::context::{ContextManager, Context};
 use crate::completion::CompletionHelper;
 
 use std::sync::atomic::AtomicBool;
@@ -74,6 +75,7 @@ pub struct Shell {
     history_location: String,
     aliases: HashMap<String, String>,
     functions: HashMap<String, FunctionBody>,
+    context_manager: ContextManager,
 }
 
 /*static DEFAULT_KEYS: Vec<KeyEvent> = vec![
@@ -119,6 +121,7 @@ impl Shell {
             history_location: String::new(),
             aliases: HashMap::new(),
             functions: HashMap::new(),
+            context_manager: ContextManager::new(),
         }
     } 
 
@@ -190,32 +193,54 @@ impl Shell {
         self.var_data.lookup_command(command)
     }
 
-    pub fn push_var_stack(&mut self) {
+
+    pub fn push_context(&mut self, context: Context) {
+        self.context_manager.push_context(context);
+    }
+    pub fn push_context_new(&mut self) {
+        self.context_manager.push_context_new();
+    }
+    pub fn pop_context(&mut self) -> Option<Context> {
+        self.context_manager.pop_context()
+    } 
+
+    /*pub fn push_var_stack(&mut self) {
         self.var_data.push_var_stack();
     }
     pub fn pop_var_stack(&mut self) {
         self.var_data.pop_var_stack();
-    }
+    }*/
 
-    pub fn add_var(&mut self, set: &str, position: isize) {
-        self.var_data.add_var(set, position);
+    pub fn add_var(&mut self, set: &str, position: usize) {
+        self.context_manager.add_var_pos(set, position);
+        //self.var_data.add_var(set, position);
     }
     pub fn add_var_context(&mut self, set: &str) {
-        let pos = self.var_data.get_current_context_pos();
-        self.var_data.add_var(set, pos);
+        self.context_manager.add_var(set);
+        //let pos = self.var_data.get_current_context_pos();
+        //self.var_data.add_var(set, pos);
     }
     pub fn expand_variable(&mut self, var: &str) -> Option<String> {
-        self.var_data.lookup_var(var)
+        let var = self.context_manager.get_var(var);
+        if var.is_none() {
+            return None;
+        }
+        let var = var.unwrap();
+        Some(var.value.clone())
+        //self.var_data.lookup_var(var)
     }
 
     pub fn add_function(&mut self, name: &str, body: FunctionBody) {
-        self.functions.insert(name.to_string(), body);
+        self.context_manager.add_function(name, body);
+        //self.functions.insert(name.to_string(), body);
     }
     pub fn is_function(&self, name: &str) -> bool {
-        self.functions.contains_key(name)
+        self.context_manager.is_function(name)
+        //self.functions.contains_key(name)
     }
     pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
-        self.functions.get(name)
+        self.context_manager.get_function(name)
+        //self.functions.get(name)
     }
 
 
@@ -404,17 +429,30 @@ pub fn set_input_args(arg: &str, index: usize) {
     shell.add_var(&set,0);
 }
 
-pub fn push_var_stack() {
+/*pub fn push_var_stack() {
     let mut shell = SHELL.get().borrow_mut();
     shell.push_var_stack();
 }
 pub fn pop_var_stack() {
     let mut shell = SHELL.get().borrow_mut();
     shell.pop_var_stack();
+}*/
+
+pub fn push_context(context: Context) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.push_context(context);
+}
+pub fn push_context_new() {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.push_context_new();
+}
+pub fn pop_context() {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.pop_context();
 }
 
 
-pub fn add_var(set: &str, index: isize) {
+pub fn add_var(set: &str, index: usize) {
     let mut shell = SHELL.get().borrow_mut();
     shell.add_var(set, index);
 }

@@ -128,7 +128,12 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
                         std::process::exit(1);
                     }
                 }
-                std::process::exit(0);
+                if shell::get_forked() {
+                    std::process::exit(0);
+                }
+                else {
+                    set_exit_status(0);
+                }
             }
 
         }
@@ -233,7 +238,7 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
         }
         
     }
-        if !background {
+        if !background && proc_count > 0 && job.borrow().processes.len() > 0{
             //eprintln!("waiting for job");
             let status = jobs::wait_for_job(Some(job.clone()));
             let id;
@@ -250,8 +255,15 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
                 _ => (),
             }
         }
-        else {
+        else if background && proc_count > 0  && job.borrow().processes.len() > 0 {
             println!("[{}] ({}) {}", job.borrow().job_id, job.borrow().processes[0].pid, job.borrow());
+        }
+        else if proc_count == 0 {
+            let id = {
+                let job = job.borrow();
+                job.job_id
+            };
+            shell::delete_job(id);
         }
 
     //let job = temp_exec(processes)?;
@@ -433,7 +445,7 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     if function.is_none() {
         return Err("Function not found");
     }
-    shell::push_var_stack();
+    shell::push_context_new();
     shell::add_var_context(&format!("0={}", command.name));
     if command.suffix.is_some() {
         let suffix = command.suffix.as_ref().unwrap();
@@ -447,7 +459,7 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
 
 
     eval_compound_command(&mut function.unwrap().compound_command);
-    shell::pop_var_stack();
+    shell::pop_context();
 
     Ok(0)//todo: change this to return the right exit code
 }
