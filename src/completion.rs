@@ -1,5 +1,5 @@
 use std::fs;
-
+use std::env;
 use crate::shell;
 
 use std::borrow::Cow::{self, Borrowed, Owned};
@@ -98,7 +98,8 @@ impl Completer for PathCompleter {
 
 fn command_complete(line: &str) -> Vec<Pair> {
     let path = {
-        shell::expand_var("PATH").unwrap().clone()
+        env::var_os("PATH").unwrap().into_string().unwrap()
+        //shell::expand_var("PATH").unwrap().clone()
     };
     let paths = path.split(":");
     let mut entries = Vec::new();

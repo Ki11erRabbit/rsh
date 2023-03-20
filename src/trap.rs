@@ -5,6 +5,11 @@ use nix::sys::signal::Signal;
 use std::os::raw::c_int;
 use nix::sys::wait::{WaitStatus,WaitPidFlag,waitpid};
 use nix::unistd::Pid;
+use std::collections::HashMap;
+use lazy_static::lazy_static;
+use fragile::Fragile;
+use std::cell::RefCell;
+use std::cell::{Ref,RefMut};
 
 use crate::jobs::{self,JobState};
 use crate::shell;
@@ -21,6 +26,87 @@ static mut SIGINT_PENDING: AtomicBool = AtomicBool::new(false);
 static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
 static mut PENDING_SIGNAL: Option<Signal> = None;
 static mut BLOCK_SIGNALS: AtomicBool = AtomicBool::new(false);
+
+lazy_static! {
+    static ref TRAP_DATA: TrapWrapper = TrapWrapper::new(RefCell::new(TrapData::new()));
+}
+
+
+/*
+ * This isn't pretty but it gets the job done. If only the Unix developers realized that signals
+ * should be done similar to how Windows does it.
+ */
+pub struct TrapWrapper {
+    pub data: RefCell<TrapData>,
+}
+
+impl TrapWrapper {
+    pub fn new(data: RefCell<TrapData>) -> Self {
+        Self {
+            data,
+        }
+    }
+
+    pub fn get(&self) -> Ref<'_,TrapData> {
+        self.data.borrow()
+    }
+    pub fn get_mut(&self) -> RefMut<'_,TrapData> {
+        self.data.borrow_mut()
+    }
+}
+
+unsafe impl std::marker::Sync for TrapWrapper {}
+unsafe impl std::marker::Send for TrapWrapper {}
+
+
+pub struct TrapData {
+    traps: HashMap<Signal, String>,
+    signal_mode: HashMap<Signal, usize>,
+    got_sig: Vec<bool>,
+    pending_signal: Option<Signal>,
+}
+
+impl TrapData {
+    pub fn new() -> Self {
+        Self {
+            traps: HashMap::new(),
+            signal_mode: HashMap::new(),
+            got_sig: vec![false; 32],
+            pending_signal: None,
+        }
+    }
+}
+
+
+pub fn is_trap_set(signal: Signal) -> bool {
+    let data = TRAP_DATA.get();
+    data.traps.contains_key(&signal)
+}
+
+pub fn get_trap(signal: Signal) -> Option<String> {
+    let data = TRAP_DATA.get();
+    data.traps.get(&signal).map(|s| s.to_string())
+}
+
+pub fn set_signal_mode(signal: Signal, mode: usize) {
+    let mut data = TRAP_DATA.get_mut();
+    data.signal_mode.insert(signal, mode);
+}
+pub fn get_signal_mode(signal: Signal) -> Option<usize> {
+    let data = TRAP_DATA.get();
+    data.signal_mode.get(&signal).map(|s| *s)
+}
+
+pub fn set_got_sig(sig_num: c_int) {
+    let mut data = TRAP_DATA.get_mut();
+    data.got_sig[sig_num as usize] = true;
+}
+
+pub fn set_pending_signal(sig_num: c_int) {
+    let mut data = TRAP_DATA.get_mut();
+    data.pending_signal = Some(Signal::try_from(sig_num).unwrap());
+}
+
 
 pub fn interrupts_off() {
     let mut sigset = signal::SigSet::all();
@@ -63,7 +149,7 @@ extern "C" fn on_sig(sig_num: c_int) {
     if is_blocked() {
         return;
     }
-    if shell::vforked() {
+    if shell::get_forked() {
         return;
     }
     unsafe {
@@ -75,18 +161,18 @@ extern "C" fn on_sig(sig_num: c_int) {
             
 
             //sig_chld();//this is different from how dash does it but it should allow for for traps to be set
-            if !shell::is_trap_set(signal::SIGCHLD) {
+            if !is_trap_set(signal::SIGCHLD) {
                 return;
             }
         }
     }
     //set which signal is got
     //set pending signal
-    shell::set_got_sig(sig_num);
-    shell::set_pending_signal(sig_num);
+    set_got_sig(sig_num);
+    set_pending_signal(sig_num);
 
 
-    if sig_num == signal::SIGINT as c_int && !shell::is_trap_set(signal::SIGINT) {
+    if sig_num == signal::SIGINT as c_int && !is_trap_set(signal::SIGINT) {
         nix::unistd::write(0,&[0xA as u8]).unwrap();
         //io::stdin().read_line(&mut String::new()).unwrap();
         unsafe {
@@ -184,9 +270,9 @@ pub fn set_signal(sig_num: c_int) {
 
     let rootshell = true; //todo change this
 
-    let lvforked = shell::vforked();
+    let lvforked = shell::get_forked();
 
-    let trap = shell::get_trap(signal);
+    let trap = get_trap(signal);
 
     if trap.is_none() {
         action = S_DFL;
@@ -220,7 +306,7 @@ pub fn set_signal(sig_num: c_int) {
         action = S_CATCH;
     }
 
-    let sig_mode = shell::get_signal_mode(signal);
+    let sig_mode = get_signal_mode(signal);
 
 
     /*if sig_mode.is_none() || sig_mode.unwrap() != 0 {
@@ -264,7 +350,7 @@ pub fn set_signal(sig_num: c_int) {
     }
 
     if !lvforked {
-        shell::set_signal_mode(signal, action);
+        set_signal_mode(signal, action);
     }
 
     let sig_action = signal::SigAction::new(

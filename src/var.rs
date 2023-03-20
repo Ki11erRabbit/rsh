@@ -69,6 +69,14 @@ impl VarData {
         val.add_var("PID", Var::new("PID", &getpid().to_string()), -1);
         val.add_var("PATH", Var::new("PATH", "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"), -1);
         
+        env::set_var("PS1", ps1);
+        env::set_var("PS2", "> ");
+        env::set_var("PS4", "+ ");
+        env::set_var("PPID", getppid().to_string());
+        env::set_var("PID", getpid().to_string());
+        env::set_var("PATH", "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+
+
         val
     }
 

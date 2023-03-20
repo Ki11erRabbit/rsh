@@ -17,8 +17,20 @@ use crate::var::{VarData, VarDataUtils};
 use crate::ast::FunctionBody;
 use crate::completion::CompletionHelper;
 
+use std::sync::atomic::AtomicBool;
 
+pub static mut FORKED: AtomicBool = AtomicBool::new(false);
 
+pub fn set_forked(state: bool) {
+    unsafe {
+        FORKED.store(state, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+pub fn get_forked() -> bool {
+    unsafe {
+        FORKED.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
 
 lazy_static! {
     pub static ref SHELL: Fragile<RefCell<Shell>> = Fragile::new(RefCell::new(Shell::new()));
@@ -50,13 +62,8 @@ pub struct Shell {
     jobctl: bool,
     job_warning: i32,
     background_pid: Pid,
-    vforked: bool,
     tty_fd: i32,
     pub job_control: JobControl,
-    traps: HashMap<Signal, String>,
-    signal_mode: HashMap<Signal, usize>,//values are S_DFL, S_CATCH, S_IGN, S_HARD_IGN, S_RESET which are defined in trap.rs
-    got_sig: Vec<bool>,
-    pending_signal: Option<Signal>,
     //output
     //output: Output,
     //errout: Output,
@@ -104,15 +111,10 @@ impl Shell {
             jobctl: false,
             job_warning: 0,
             background_pid: Pid::from_raw(-1),
-            vforked: false,
             tty_fd: -1,
             job_control: JobControl::new(),
             root_pid: getpid(),
             path: String::new(),
-            traps: HashMap::new(),
-            got_sig: vec![false; 32],
-            pending_signal: None,
-            signal_mode: HashMap::new(),
             readline,
             history_location: String::new(),
             aliases: HashMap::new(),
@@ -370,43 +372,6 @@ pub fn update_pid_table(job_id: JobId, pid: Pid) {
     shell.update_pid_table(job_id, pid);
 }
 
-pub fn is_trap_set(signal: Signal) -> bool {
-    let shell = SHELL.get().borrow();
-    shell.traps.contains_key(&signal)
-}
-
-pub fn get_trap(signal: Signal) -> Option<String> {
-    let shell = SHELL.get().borrow();
-    shell.traps.get(&signal).map(|s| s.to_string())
-}
-
-pub fn set_signal_mode(signal: Signal, mode: usize) {
-    let mut shell = SHELL.get().borrow_mut();
-    shell.signal_mode.insert(signal, mode);
-}
-pub fn get_signal_mode(signal: Signal) -> Option<usize> {
-    let shell = SHELL.get().borrow();
-    shell.signal_mode.get(&signal).map(|s| *s)
-}
-
-pub fn vforked() -> bool {
-    let shell = SHELL.get().borrow();
-    shell.vforked
-}
-pub fn flip_vforked() {
-    let mut shell = SHELL.get().borrow_mut();
-    shell.vforked = !shell.vforked;
-}
-
-pub fn set_got_sig(sig_num: c_int) {
-    let mut shell = SHELL.get().borrow_mut();
-    shell.got_sig[sig_num as usize] = true;
-}
-
-pub fn set_pending_signal(sig_num: c_int) {
-    let mut shell = SHELL.get().borrow_mut();
-    shell.pending_signal = Some(Signal::try_from(sig_num).unwrap());
-}
 
 pub fn lookup_command(command: &str) -> Option<String> {
     let shell = SHELL.get().borrow();

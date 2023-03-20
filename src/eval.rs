@@ -473,7 +473,7 @@ fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
             return Ok(child);
         },
         ForkResult::Child => {
-            shell::flip_vforked();
+            shell::set_forked(true);
 
             return Ok(Pid::from_raw(0));
         }
