@@ -1,5 +1,6 @@
 use std::os::unix::io::RawFd;
 use std::str::{self, CharIndices};
+use std::fmt::{self, Display, Formatter};
 
 /// A result type wrapping a token with start and end locations.
 pub type Span<T, E> = Result<(usize, T, usize), E>;
@@ -8,6 +9,16 @@ pub type Span<T, E> = Result<(usize, T, usize), E>;
 #[derive(Debug)]
 pub enum Error {
     UnrecognizedChar(usize, char, usize),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Error::UnrecognizedChar(start, chr, end) => {
+                write!(f, "Unrecognized character '{}' at position {}", chr, start)
+            }
+        }
+    }
 }
 
 #[derive(Debug,Clone,PartialEq)]
@@ -57,6 +68,58 @@ pub enum Token<'input> {
     Number(RawFd),
     Word(&'input str),
 }
+
+impl Display for Token<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Token::Space => write!(f, "Space"),
+            Token::Tab => write!(f, "Tab"),
+            Token::Newline => write!(f, "Newline"),
+            Token::NewlineList => write!(f, "NewlineList"),
+            Token::Comment => write!(f, "Comment"),
+            Token::SemiColon => write!(f, "SemiColon"),
+            Token::Pipe => write!(f, "Pipe"),
+            Token::BackTick => write!(f, "BackTick"),
+            Token::Dollar => write!(f, "Dollar"),
+            Token::OpenParen => write!(f, "OpenParen"),
+            Token::CloseParen => write!(f, "CloseParen"),
+            Token::OpenBrace => write!(f, "OpenBrace"),
+            Token::CloseBrace => write!(f, "CloseBrace"),
+            Token::Greater => write!(f, "Greater"),
+            Token::Less => write!(f, "Less"),
+            Token::DoubleGreater => write!(f, "DoubleGreater"),
+            Token::DoubleLess => write!(f, "DoubleLess"),
+            Token::GreaterAnd => write!(f, "GreaterAnd"),
+            Token::LessAnd => write!(f, "LessAnd"),
+            Token::Ampersand => write!(f, "Ampersand"),
+            Token::Equals => write!(f, "Equals"),
+            Token::And => write!(f, "And"),
+            Token::Or => write!(f, "Or"),
+            Token::Bang => write!(f, "Bang"),
+            Token::For => write!(f, "For"),
+            Token::In => write!(f, "In"),
+            Token::While => write!(f, "While"),
+            Token::Until => write!(f, "Until"),
+            Token::If => write!(f, "If"),
+            Token::Then => write!(f, "Then"),
+            Token::Else => write!(f, "Else"),
+            Token::Elif => write!(f, "Elif"),
+            Token::Fi => write!(f, "Fi"),
+            Token::Do => write!(f, "Do"),
+            Token::Done => write!(f, "Done"),
+            Token::Case => write!(f, "Case"),
+            Token::Esac => write!(f, "Esac"),
+            Token::Break => write!(f, "Break"),
+            Token::Continue => write!(f, "Continue"),
+            Token::Return => write!(f, "Return"),
+            Token::EOF => write!(f, "EOF"),
+            Token::Subshell(s) => write!(f, "Subshell({})", s),
+            Token::Number(n) => write!(f, "Number({})", n),
+            Token::Word(s) => write!(f, "Word({})", s),
+        }
+    }
+}
+
 
 pub struct Lexer<'input> {
     send_eof: bool,

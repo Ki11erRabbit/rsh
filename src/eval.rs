@@ -463,7 +463,7 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     }
 
 
-    eval_compound_command(&mut function.unwrap().compound_command);
+    eval_compound_command(&mut function.unwrap().borrow_mut().compound_command);
     shell::pop_context();
 
     Ok(0)//todo: change this to return the right exit code

@@ -1,6 +1,8 @@
 use std::collections::{HashMap,BTreeMap};
 use std::default::Default;
 use std::env;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 use nix::unistd::{getpid, getppid, getuid,Uid};
 
@@ -35,8 +37,8 @@ impl ToString for Var {
 
 #[derive(Debug, Clone)]
 pub struct ContextManager {
-    context_stack: Vec<Context>,
-    exported_contexts: HashMap<String,Context>,
+    context_stack: Vec<Rc<RefCell<Context>>>,
+    exported_contexts: HashMap<String,Rc<RefCell<Context>>>,
 }
 
 impl ContextManager {
@@ -45,95 +47,71 @@ impl ContextManager {
     }
 
     pub fn push_context(&mut self, context: Context) {
-        self.context_stack.push(context);
+        self.context_stack.push(Rc::new(RefCell::new(context)));
     }
     pub fn push_context_new(&mut self) {
-        self.context_stack.push(Context::default());
+        self.context_stack.push(Rc::new(RefCell::new(Context::default())));
     }
 
-    pub fn pop_context(&mut self) -> Option<Context> {
+    pub fn pop_context(&mut self) -> Option<Rc<RefCell<Context>>> {
         if self.context_stack.len() == 1 {//to prevent deleting the global context
             return None;
         }
         self.context_stack.pop()
     }
 
-    pub fn get_context(&self) -> &Context {
-        self.context_stack.last().unwrap()
+    pub fn get_context(&self) -> Rc<RefCell<Context>> {
+        self.context_stack.last().unwrap().clone()
     }
 
-    pub fn get_context_mut(&mut self) -> &mut Context {
-        self.context_stack.last_mut().unwrap()
+    pub fn get_env_context(&self) -> Rc<RefCell<Context>> {
+        self.context_stack.first().unwrap().clone()
     }
 
 
-    pub fn add_context(&mut self, name: &str, context: Context) {
+    pub fn add_context(&mut self, name: &str, context: Rc<RefCell<Context>>) {
         self.exported_contexts.insert(name.to_string(), context);
     }
 
-    pub fn get_context_by_name(&self, name: &str) -> Option<&Context> {
-        self.exported_contexts.get(name)
+    pub fn get_context_by_name(&self, name: &str) -> Option<Rc<RefCell<Context>>> {
+        self.exported_contexts.get(name).cloned()
     }
 
-    pub fn get_context_by_name_mut(&mut self, name: &str) -> Option<&mut Context> {
-        self.exported_contexts.get_mut(name)
-    }
-
-    pub fn get_var(&self, name: &str) -> Option<&Var> {
+    pub fn get_var(&self, name: &str) -> Option<Rc<RefCell<Var>>> {
         if name.contains("::") {
             let mut split = name.split("::");
             let context_name = split.next().unwrap();
             let var_name = split.next().unwrap();
             if let Some(context) = self.get_context_by_name(context_name) {
-                context.get_var(var_name)
+                context.borrow().get_var(var_name)
             } else {
                 None
             }
         }
         else {
             for context in self.context_stack.iter().rev() {
-                if let Some(var) = context.get_var(name) {
+                if let Some(var) = context.borrow().get_var(name) {
                     return Some(var);
                 }
             }
             None
         }
     } 
-    pub fn get_var_mut(&mut self, name: &str) -> Option<&mut Var> {
-        if name.contains("::") {
-            let mut split = name.split("::");
-            let context_name = split.next().unwrap();
-            let var_name = split.next().unwrap();
-            if let Some(context) = self.get_context_by_name_mut(context_name) {
-                context.get_var_mut(var_name)
-            } else {
-                None
-            }
-        }
-        else {
-            for context in self.context_stack.iter_mut().rev() {
-                if let Some(var) = context.get_var_mut(name) {
-                    return Some(var);
-                }
-            }
-            None
-        }
-    }
 
-    pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
+    pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         if name.contains("::") {
             let mut split = name.split("::");
             let context_name = split.next().unwrap();
             let func_name = split.next().unwrap();
             if let Some(context) = self.get_context_by_name(context_name) {
-                context.get_function(func_name)
+                context.borrow().get_function(func_name)
             } else {
                 None
             }
         }
         else {
             for context in self.context_stack.iter().rev() {
-                if let Some(func) = context.get_function(name) {
+                if let Some(func) = context.borrow().get_function(name) {
                     return Some(func);
                 }
             }
@@ -147,14 +125,14 @@ impl ContextManager {
             let context_name = split.next().unwrap();
             let func_name = split.next().unwrap();
             if let Some(context) = self.get_context_by_name(context_name) {
-                context.get_function(func_name).is_some()
+                context.borrow().get_function(func_name).is_some()
             } else {
                 false
             }
         }
         else {
             for context in self.context_stack.iter().rev() {
-                if context.get_function(name).is_some() {
+                if context.borrow().get_function(name).is_some() {
                     return true;
                 }
             }
@@ -162,8 +140,8 @@ impl ContextManager {
         }
     }
 
-    pub fn add_function(&mut self, name: &str, func: FunctionBody) {
-        self.get_context_mut().add_function(name, func);
+    pub fn add_function(&mut self, name: &str, func: Rc<RefCell<FunctionBody>>) {
+        self.get_context().borrow_mut().add_function(name, func);
     }
 
     pub fn add_var(&mut self, set: &str) {
@@ -171,37 +149,51 @@ impl ContextManager {
         let name = split.next().unwrap();
 
         for context in self.context_stack.iter_mut().rev() {
-            if context.get_var(name).is_some() {
-                context.add_var(set);
+            if context.borrow().get_var(name).is_some() {
+                context.borrow_mut().add_var(set);
                 return;
             }
         }
-        self.get_context_mut().add_var(set);
+        self.get_context().borrow_mut().add_var(set);
     }
 
     pub fn add_var_pos(&mut self, set: &str, pos: usize) {
-        self.context_stack[pos].add_var(set);
+        self.context_stack[pos].borrow_mut().add_var(set);
     }
 
-    pub fn all_vars(&self) -> BTreeMap<&String, &Var> {
+    pub fn lookup_command(&self, cmd: &str) -> Option<String> {
+        for path in self.context_stack.first().unwrap().borrow().get_var("PATH").unwrap().borrow().value.split(":") {
+            let path = format!("{}/{}", path, cmd);
+            let metadata = std::fs::metadata(&path);
+            if metadata.is_ok() {
+                if metadata.unwrap().is_file() {
+                    return Some(path);
+                }
+            }
+        }
+        None
+    }
+
+
+    pub fn all_vars(&self) -> BTreeMap<String, Rc<RefCell<Var>>> {
         let mut vars = BTreeMap::new();
         for context in &self.context_stack {
-            for (name, var) in &context.vars {
-                vars.insert(name, var);
+            for (name, var) in &context.borrow().vars {
+                vars.insert(name.clone(), var.clone());
             }
         }
         for (_,context) in &self.exported_contexts {
-            for (name, var) in &context.vars {
-                vars.insert(name, var);
+            for (name, var) in &context.borrow().vars {
+                vars.insert(name.clone(), var.clone());
             }
         }
         vars
     }
 
-    fn convert_env() -> HashMap<String, Var> {
+    fn convert_env() -> HashMap<String, Rc<RefCell<Var>>> {
         let mut vars = HashMap::new();
         for (key, value) in std::env::vars() {
-            vars.insert(key.clone(), Var::new(&key, &value));
+            vars.insert(key.clone(), Rc::new(RefCell::new(Var::new(&key, &value))));
         }
         vars
     }
@@ -221,16 +213,16 @@ impl Default for ContextManager {
 
 
         if env::var("PATH").is_err() {
-            vars.insert("PATH".to_owned(), Var::new("PATH", "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"));
+            vars.insert("PATH".to_owned(), Rc::new(RefCell::new(Var::new("PATH", "/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"))));
         }
         if env::var("PWD").is_err() {//TODO: Change this to use a nix function that will be more reliable
-            vars.insert("PWD".to_owned(), Var::new("PWD", nix::unistd::getcwd().unwrap().to_str().unwrap()));
+            vars.insert("PWD".to_owned(), Rc::new(RefCell::new(Var::new("PWD", nix::unistd::getcwd().unwrap().to_str().unwrap()))));
         }
-        vars.insert("PS1".to_owned(), Var::new("PS1", ps1));
-        vars.insert("PS2".to_owned(), Var::new("PS2", "> "));
-        vars.insert("PS4".to_owned(), Var::new("PS4", "+ "));
-        vars.insert("PPID".to_owned(), Var::new("PPID", getppid().to_string().as_str()));
-        vars.insert("PID".to_owned(), Var::new("PID", getpid().to_string().as_str()));
+        vars.insert("PS1".to_owned(), Rc::new(RefCell::new(Var::new("PS1", ps1))));
+        vars.insert("PS2".to_owned(), Rc::new(RefCell::new(Var::new("PS2", "> "))));
+        vars.insert("PS4".to_owned(), Rc::new(RefCell::new(Var::new("PS4", "+ "))));
+        vars.insert("PPID".to_owned(), Rc::new(RefCell::new(Var::new("PPID", getppid().to_string().as_str()))));
+        vars.insert("PID".to_owned(), Rc::new(RefCell::new(Var::new("PID", getpid().to_string().as_str()))));
 
 
         ContextManager::convert_env().drain().for_each(|(key, value)| {
@@ -238,7 +230,7 @@ impl Default for ContextManager {
         });
         
         Self {
-            context_stack: vec![Context::new(vars)],
+            context_stack: vec![Rc::new(RefCell::new(Context::new(vars)))],
             exported_contexts: HashMap::new(),
         }
     }
@@ -251,35 +243,27 @@ pub trait ContextUtils<V> {
 
 #[derive(Debug, Clone)]
 pub struct Context {
-    pub vars: HashMap<String, Var>,
-    functions: HashMap<String, FunctionBody>,
+    pub vars: HashMap<String, Rc<RefCell<Var>>>,
+    functions: HashMap<String, Rc<RefCell<FunctionBody>>>,
 }
 
 impl Context {
-    pub fn new(vars: HashMap<String, Var>) -> Self {
+    pub fn new(vars: HashMap<String, Rc<RefCell<Var>>>) -> Self {
         Self {
             vars,
             functions: HashMap::new(),
         }
     }
 
-    pub fn get_var(&self, name: &str) -> Option<&Var> {
-        self.vars.get(name)
+    pub fn get_var(&self, name: &str) -> Option<Rc<RefCell<Var>>> {
+        self.vars.get(name).cloned()
     }
 
-    pub fn get_var_mut(&mut self, name: &str) -> Option<&mut Var> {
-        self.vars.get_mut(name)
+    pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
+        self.functions.get(name).cloned()
     }
 
-    pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
-        self.functions.get(name)
-    }
-
-    pub fn get_function_mut(&mut self, name: &str) -> Option<&mut FunctionBody> {
-        self.functions.get_mut(name)
-    }
-
-    pub fn add_function(&mut self, name: &str, body: FunctionBody) {
+    pub fn add_function(&mut self, name: &str, body: Rc<RefCell<FunctionBody>>) {
         self.functions.insert(name.to_string(), body);
     }
 
@@ -352,6 +336,6 @@ impl ContextUtils<(&str, &str)> for Context {
 
 impl ContextUtils<Var> for Context {
     fn add_var(&mut self, var: Var) {
-        self.vars.insert(var.name.to_string(), var);
+        self.vars.insert(var.name.to_string(), Rc::new(RefCell::new(var)));
     }
 }

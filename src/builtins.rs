@@ -9,6 +9,7 @@ use nix::sys::signal::kill;
 use nix::sys::signal::Signal;
 use crate::jobs;
 use crate::trap;
+use crate::context::ContextUtils;
 
 
 enum IdType {
@@ -190,6 +191,7 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
         env::vars().for_each(|(key, value)| {
             println!("{}={}", key, value);
         });
+        return Ok(());
     }
 
     let suffix = command.suffix.as_ref().unwrap();
@@ -216,20 +218,32 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
         else {
             if suffix.word[1].as_str() == "self" {
                 let context = shell::get_current_context();
-
-                let namespace = &context.get_var("0").unwrap().value;
-
-                shell::add_context(&namespace, context.clone());
+                let namespace = {
+                    context.borrow().get_var("0").unwrap().borrow().value.clone()
+                };
+                shell::add_context(&namespace, context);
                 return Ok(());
             }
             else {
                 //TODO: open file, parse it, and add its data as a context
             }
         }
+        return Ok(());
     }
     
     for word in command.suffix.as_ref().unwrap().word.iter() {
         if !word.contains('=') {
+            let var = shell::expand_var(word);
+            if var.is_none() {
+                let function = shell::get_function(word);
+                if function.is_some() {
+                    shell::get_env_context().borrow_mut().add_function(word, function.unwrap());
+                }
+            }
+            else {
+                let temp = format!("{}={}",word,var.unwrap());
+                shell::get_env_context().borrow_mut().add_var(temp.as_str());
+            }
             continue;//TODO: make this read argument
         }
         let mut split = word.split('=');

@@ -55,7 +55,7 @@ pub struct Shell {
     //local_vars: HashMap<String, String>,
     //local_var_stack: Vec<HashMap<String, String>>,
     //var_table: BTreeMap<String, String>,
-    var_data: VarData,
+    //var_data: VarData,
     // directory
     curr_directory: String,
     physical_directory: PathBuf,
@@ -107,7 +107,7 @@ impl Shell {
         Self {
             script_name: "rsh".to_string(),
             interactive: true,
-            var_data: VarData::new(),
+            //var_data: VarData::new(),
             curr_directory: String::new(),
             physical_directory: getcwd().unwrap(),
             jobctl: false,
@@ -190,7 +190,7 @@ impl Shell {
     }
 
     pub fn lookup_command(&self, command: &str) -> Option<String> {
-        self.var_data.lookup_command(command)
+        self.context_manager.lookup_command(command)
     }
 
 
@@ -200,16 +200,21 @@ impl Shell {
     pub fn push_context_new(&mut self) {
         self.context_manager.push_context_new();
     }
-    pub fn pop_context(&mut self) -> Option<Context> {
+    pub fn pop_context(&mut self) -> Option<Rc<RefCell<Context>>> {
         self.context_manager.pop_context()
     } 
 
-    pub fn add_context(&mut self, namespace:&str, context: Context) {
+    pub fn add_context(&mut self, namespace:&str, context: Rc<RefCell<Context>>) {
         self.context_manager.add_context(namespace,context);
     }
-    pub fn get_current_context(&self) -> Context {//todo: get rid of clone
+    pub fn get_current_context(&self) -> Rc<RefCell<Context>> {//todo: get rid of clone
         self.context_manager.get_context().clone()
     }
+
+    pub fn get_env_context(&self) -> Rc<RefCell<Context>> {
+        self.context_manager.get_env_context()
+    }
+
     /*pub fn push_var_stack(&mut self) {
         self.var_data.push_var_stack();
     }
@@ -232,19 +237,20 @@ impl Shell {
             return None;
         }
         let var = var.unwrap();
-        Some(var.value.clone())
+        let x = Some(var.borrow().value.clone());
+        x
         //self.var_data.lookup_var(var)
     }
 
     pub fn add_function(&mut self, name: &str, body: FunctionBody) {
-        self.context_manager.add_function(name, body);
+        self.context_manager.add_function(name, Rc::new(RefCell::new(body)));
         //self.functions.insert(name.to_string(), body);
     }
     pub fn is_function(&self, name: &str) -> bool {
         self.context_manager.is_function(name)
         //self.functions.contains_key(name)
     }
-    pub fn get_function(&self, name: &str) -> Option<&FunctionBody> {
+    pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         self.context_manager.get_function(name)
         //self.functions.get(name)
     }
@@ -457,13 +463,17 @@ pub fn pop_context() {
     shell.pop_context();
 }
 
-pub fn add_context(namespace: &str, context: Context) {
+pub fn add_context(namespace: &str, context: Rc<RefCell<Context>>) {
     let mut shell = SHELL.get().borrow_mut();
     shell.add_context(namespace, context);
 }
-pub fn get_current_context() -> Context {
+pub fn get_current_context() -> Rc<RefCell<Context>> {
     let shell = SHELL.get().borrow();
     shell.get_current_context()
+}
+pub fn get_env_context() -> Rc<RefCell<Context>> {
+    let shell = SHELL.get().borrow();
+    shell.get_env_context()
 }
 
 pub fn add_var(set: &str, index: usize) {
@@ -495,7 +505,7 @@ pub fn is_function(name: &str) -> bool {
     let shell = SHELL.get().borrow();
     shell.is_function(name)
 }
-pub fn get_function(name: &str) -> Option<FunctionBody> {
+pub fn get_function(name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
     let shell = SHELL.get().borrow();
-    shell.get_function(name).cloned()
+    shell.get_function(name)
 }

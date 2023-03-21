@@ -16,6 +16,8 @@ use lalrpop_util::lalrpop_mod;
 
 use lexer::Lexer;
 
+use std::error::Error;
+
 use std::io;
 use std::env;
 use std::fs::File;
@@ -34,10 +36,34 @@ fn main() {
 
     let input = parse_args(args);
 
+    /*match read_profile() {
+        Ok(_) => {},
+        Err(_) => {
+            
+        }
+    }*/
+
+
   
    
     shell::push_context_new();
     shell::set_arg_0();
+
+    
+    match read_rc() {
+        Ok(_) => {},
+        Err(_) => {
+            
+        }
+    }
+
+    match read_user_profile() {
+        Ok(_) => {},
+        Err(_) => {
+            
+        }
+    }
+
 
     if shell::is_interactive() && input.is_none() {
         trap::set_signal(17);
@@ -224,6 +250,92 @@ fn read_from_args(input: &str) {
     let _result = eval::eval(&mut ast);
 }
 
-fn read_profile() {
 
+
+fn read_profile() -> Result<(), Box<dyn Error>>{
+    let file = File::open("/etc/profile");
+    if file.is_err() {
+        return Ok(());
+    }
+    let mut file = file.unwrap();
+    let mut system_profile = String::new();
+    match file.read_to_string(&mut system_profile) {
+        Ok(_) => {},
+        Err(err) => {
+            println!("Error reading /etc/profile: {:?}", err);
+        }
+    }
+
+    let lexer = Lexer::new(&system_profile);
+    let mut ast = match grammar::CompleteCommandParser::new()
+        .parse(&system_profile,lexer) {
+            Ok(ast) => ast,
+            Err(err) => {
+                println!("Error: {:?}", err);
+                return Ok(());
+            }
+        };
+
+    eval::eval(&mut ast).unwrap();
+
+
+    Ok(())
+}
+
+fn read_user_profile() -> Result<(), Box<dyn Error>> {
+    let file = File::open("~/.profile");
+    if file.is_err() {
+        return Ok(());
+    }
+    let mut file = file.unwrap();
+    let mut user_profile = String::new();
+    match file.read_to_string(&mut user_profile) {
+        Ok(_) => {},
+        Err(err) => {
+            println!("Error reading ~/.profile: {:?}", err);
+        }
+    }
+
+    let lexer = Lexer::new(&user_profile);
+    let mut ast = match grammar::CompleteCommandParser::new()
+        .parse(&user_profile,lexer) {
+            Ok(ast) => ast,
+            Err(err) => {
+                println!("Error: {:?}", err);
+                return Ok(());
+            }
+        };
+
+    eval::eval(&mut ast).unwrap();
+
+    Ok(())
+}
+
+fn read_rc() -> Result<(), Box<dyn Error>> {
+    let file = File::open("~/.rshrc");
+    if file.is_err() {
+        return Ok(());
+    }
+    let mut file = file.unwrap();
+    let mut rc = String::new();
+    match file.read_to_string(&mut rc) {
+        Ok(_) => {},
+        Err(err) => {
+            println!("Error reading ~/.rshrc: {:?}", err);
+        }
+    }
+    
+    let lexer = Lexer::new(&rc);
+    let mut ast = match grammar::CompleteCommandParser::new()
+        .parse(&rc,lexer) {
+            Ok(ast) => ast,
+            Err(err) => {
+                println!("Error: {:?}", err);
+                return Ok(());
+            }
+        };
+
+    eval::eval(&mut ast).unwrap();
+
+    Ok(())
 }
