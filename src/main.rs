@@ -13,6 +13,7 @@ mod var;
 //mod exec;
 //mod process;
 use lalrpop_util::lalrpop_mod;
+lalrpop_mod!(pub grammar);
 
 use lexer::Lexer;
 
@@ -24,7 +25,6 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
 
-lalrpop_mod!(pub grammar);
 
 use nix::errno::Errno;
 use rustyline::error::ReadlineError;
@@ -43,7 +43,7 @@ fn main() {
         }
     }*/
 
-
+    
   
    
     shell::push_context_new();
@@ -83,6 +83,11 @@ fn main() {
 
 }
 
+/// This function reads the commandline arguments passed into the shell and parses them.
+/// The function returns a Some(String) if -c was passed in, meaning that the shell will
+/// evaluate all commandline arguments as a script.
+/// The function returns a None if -c was not passed in, meaning that the shell will either
+/// run in interactive mode or run a script.
 fn parse_args(args: Vec<String>) -> Option<String> {
    
     let mut args = args;
@@ -137,6 +142,10 @@ fn parse_args(args: Vec<String>) -> Option<String> {
 
 }
 
+/// This function parses a command line argument.
+/// If the argument is -c, the function returns true.
+/// If the argument is not -c, the function returns false.
+/// This is how we check to see if the we are going to evaluate the commandline arguments as a script.
 fn parse_dash_arg(arg: &str) -> bool {
     let mut read_from_args = false;
     if arg.chars().nth(0).unwrap() == '-' {
@@ -161,6 +170,8 @@ fn parse_dash_arg(arg: &str) -> bool {
     read_from_args
 }
 
+/// This function is what the user interacts with when the shell is in interactive mode.
+/// It is a simple REPL that uses the readline from the Shell struct singleton.
 fn interactive_loop() {
 
 
@@ -186,7 +197,7 @@ fn interactive_loop() {
                 continue;
             },*/
             Err(err) => {
-                println!("Redline Error: {:?}", err);
+                println!("Readline Error: {:?}", err);
                 break;
             }
         }
@@ -222,6 +233,10 @@ fn interactive_loop() {
     shell::save_history();
 }
 
+
+/// This function needs to be changed since it won't work with how the parser works.
+/// This function takes a file name and puts the contents of the file into a buffer.
+/// The buffer is then passed into the parser and evaluated.
 fn script_loop(script_name: &str) {
     let file = File::open(script_name).unwrap();
     let mut buf_reader = BufReader::new(file);
@@ -241,6 +256,7 @@ fn script_loop(script_name: &str) {
     }
 }
 
+/// This function takes in the commandline arguments as a &str and evaluates it.
 fn read_from_args(input: &str) {
     let lexer = Lexer::new(&input);        
     let mut ast = grammar::CompleteCommandParser::new()
@@ -251,7 +267,11 @@ fn read_from_args(input: &str) {
 }
 
 
-
+/// This function reads the system profile file located at /etc/profile.
+/// The file is is opened and evaluated as a script.
+/// This function is always called in main in order to load the system profile.
+/// The return value is Ok(()) if the parser is successful.
+/// The return value is Err(err) if the parser fails.
 fn read_profile() -> Result<(), Box<dyn Error>>{
     let file = File::open("/etc/profile");
     if file.is_err() {
@@ -282,6 +302,11 @@ fn read_profile() -> Result<(), Box<dyn Error>>{
     Ok(())
 }
 
+/// This function is similar to read_profile but it instead reads the user profile file located at ~/.profile.
+/// The file is is opened and evaluated as a script.
+/// This function is always called in main in order to load the user profile.
+/// The return value is Ok(()) if the parser is successful.
+/// The return value is Err(err) if the parser fails.
 fn read_user_profile() -> Result<(), Box<dyn Error>> {
     let file = File::open("~/.profile");
     if file.is_err() {
@@ -311,6 +336,11 @@ fn read_user_profile() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// This function reads the user's rshrc file that is located at ~/.rshrc.
+/// The file is is opened and evaluated as a script.
+/// This function is always called in main in order to load the user's rshrc file.
+/// The return value is Ok(()) if the parser is successful.
+/// The return value is Err(err) if the parser fails.
 fn read_rc() -> Result<(), Box<dyn Error>> {
     let file = File::open("~/.rshrc");
     if file.is_err() {
