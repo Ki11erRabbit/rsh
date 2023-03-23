@@ -1,5 +1,7 @@
 use std::env;
 use std::io;
+use std::fs::File;
+use std::io::prelude::*;
 use std::process::exit;
 use std::io::Write;
 use crate::ast::SimpleCommand;
@@ -9,8 +11,17 @@ use nix::sys::signal::kill;
 use nix::sys::signal::Signal;
 use crate::jobs;
 use crate::trap;
+use crate::eval;
 use crate::context::ContextUtils;
+use crate::context::Context;
 
+use std::rc::Rc;
+use std::cell::RefCell;
+
+use lalrpop_util::lalrpop_mod;
+lalrpop_mod!(pub grammar);
+
+use crate::lexer::Lexer;
 
 enum IdType {
     Pid,
@@ -186,6 +197,34 @@ pub fn unalias(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+
+
+fn create_context_from_file(file: &str) -> Result<Rc<RefCell<Context>>, std::io::Error> {
+    let mut file = File::open(file)?;
+    let mut string = String::new();
+    file.read_to_string(&mut string)?;
+
+    let lexer = Lexer::new(string.as_str());
+    let mut ast = match grammar::CompleteCommandParser::new().parse(&string,lexer) {
+        Ok(ast) => ast,
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error parsing file: {}", e)));
+        }
+    };
+
+    shell::push_context_new();
+
+    match eval::eval(&mut ast) {
+        Ok(_) => {},
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error evaluating file: {}", e)));
+        }
+    }
+    let context = shell::pop_context().unwrap();
+    Ok(context)
+}
+
+
 pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() || command.suffix.as_ref().unwrap().word[0].contains("-p") {
         env::vars().for_each(|(key, value)| {
@@ -212,7 +251,8 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
                 return Ok(());
             }
             else {
-                //TODO: open file, parse it, and add its data as a context
+                let result = create_context_from_file(file)?;
+                shell::add_context(&namespace, result);
             }
         }
         else {
@@ -225,7 +265,8 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
                 return Ok(());
             }
             else {
-                //TODO: open file, parse it, and add its data as a context
+                let result = create_context_from_file(suffix.word[0].as_str())?;
+                shell::add_context(suffix.word[0].as_str(), result);
             }
         }
         return Ok(());
