@@ -28,7 +28,7 @@ enum IdType {
     Jid,
 }
 
-
+/// This function trims quotes off of its input.
 fn trim(word: &str) -> String {
     if (word.starts_with("\"") && word.ends_with("\"")) || (word.starts_with("'") && word.ends_with("'")){
         let mut chars = word.chars();
@@ -41,7 +41,9 @@ fn trim(word: &str) -> String {
     }
 }
 
-// this needs to change several variables when changing but for now we won't care
+/// This function is the 'cd' command of the shell.
+/// We use the env::set_current_dir function to change the current directory.
+/// this needs to change several variables when changing but for now we won't care
 pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
     
     trap::interrupts_off();
@@ -56,6 +58,10 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This is the 'exit' command of the shell.
+/// Despite having a return value, this function will cause the shell to exit.
+/// By default it will exit with a status code of 0, but if the user specifies a status code
+/// it will exit with that status code.
 pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     shell::save_history();
     if command.suffix.is_none() {
@@ -68,12 +74,17 @@ pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     exit(code);
 }
 
+/// This is the 'jobs' command of the shell.
+/// It prints out all of the jobs that are currently running.
 pub fn jobs() -> Result<(), std::io::Error> {
     print!("{}", shell::display_jobs());
     io::stdout().flush().unwrap();
     Ok(())
 }
 
+/// This is the 'fg' and 'bg' commands of the shell.
+/// They are used to bring a job to the foreground or background respectively.
+/// They take a SimpleCommand with a suffix that is either a valid Pid or a job id if it starts with a '%'.
 pub fn fgbg(command: &SimpleCommand) -> Result<(), std::io::Error> {
     trap::interrupts_off();
     let id;
@@ -101,6 +112,9 @@ pub fn fgbg(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This is the 'fg' command of the shell.
+/// It is used to bring a stopped job to the foreground.
+/// It takes a SimpleCommand with a suffix that is either a valid Pid or a job id if it starts with a '%'.
 fn fg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     let mut job: Option<std::rc::Rc<std::cell::RefCell<jobs::Job>>> = None;
     match id_type {
@@ -133,6 +147,9 @@ fn fg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This is the 'bg' command of the shell.
+/// It is used to bring a stopped job to the background.
+/// It takes a SimpleCommand with a suffix that is either a valid Pid or a job id if it starts with a '%'.
 fn bg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     let mut job: Option<std::rc::Rc<std::cell::RefCell<jobs::Job>>> = None;
     match id_type {
@@ -163,6 +180,11 @@ fn bg(id: usize, id_type: IdType) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This is the 'alias' command of the shell.
+/// It is used to create aliases for commands.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'alias=command'.
+/// If the suffix is empty, it will print out all of the current aliases.
+/// If the suffix is '-p', it will print out all of the current aliases.
 pub fn alias(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() {
         shell::display_aliases();
@@ -182,6 +204,11 @@ pub fn alias(command: &SimpleCommand) -> Result<(), std::io::Error> {
 
     Ok(())
 }
+
+/// This is the 'unalias' command of the shell.
+/// It is used to remove aliases for commands.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'alias'.
+/// If the suffix is '-a', it will remove all of the current aliases.
 pub fn unalias(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "unalias needs an argument"));
@@ -198,7 +225,13 @@ pub fn unalias(command: &SimpleCommand) -> Result<(), std::io::Error> {
 }
 
 
-
+/// This is an internal function that takes a &str which is the name of a file.
+/// It will then open the file and read it into a string.
+/// It will then parse the string into an AST.
+/// It will then push a new context onto the context stack.
+/// It will then evaluate the AST.
+/// It will then pop the context off of the context stack.
+/// It will then return the context.
 fn create_context_from_file(file: &str) -> Result<Rc<RefCell<Context>>, std::io::Error> {
     let mut file = File::open(file)?;
     let mut string = String::new();
@@ -224,7 +257,16 @@ fn create_context_from_file(file: &str) -> Result<Rc<RefCell<Context>>, std::io:
     Ok(context)
 }
 
-
+/// This is the 'export' command of the shell.
+/// It is used to export variables to the environment.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'variable=value'.
+/// If the suffix is empty, it will print out all of the current environment variables.
+/// If the suffix is '-p', it will print out all of the current environment variables.
+/// If the first value of the Suffix is 'context', it will perform one of the following:
+/// .    If the second value is 'self', it will export the current context to the environment using the namespace defined by $0.
+/// .    If the second value contains an equal sign ('='), with the left side being the namespace and the right side either being a file or 'self'.
+/// .        If the right side is a file, it will evaluate the as a new context and export it.
+/// .        If the right side is 'self', it will export the current context to the environment using the namespace defined by the left side.
 pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() || command.suffix.as_ref().unwrap().word[0].contains("-p") {
         env::vars().for_each(|(key, value)| {
@@ -297,6 +339,7 @@ pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This evaluates an assignment which is a SimpleCommand with a prefix that is a string of the form 'variable=value'.
 pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
 
 
@@ -305,6 +348,10 @@ pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
+/// This is the 'return' command of the shell.
+/// It returns from a function.
+/// By default, it returns 0.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'number'.
 pub fn return_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() {
         return Err(std::io::Error::new(std::io::ErrorKind::Other, "return needs an argument"));

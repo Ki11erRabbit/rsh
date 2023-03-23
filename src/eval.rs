@@ -16,25 +16,31 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
 
+/// Stores the exit status of the last command
 pub static mut EXIT_STATUS: AtomicI32 = AtomicI32::new(0);
 
+/// gets the exit status of the last command
 pub fn get_exit_status() -> WaitStatus {
     unsafe {
         WaitStatus::from_raw(Pid::from_raw(-1),EXIT_STATUS.load(Ordering::Relaxed)).unwrap()
     }
 }
+/// sets the exit status of the last command
 pub fn set_exit_status(status: i32) {
     unsafe {
         EXIT_STATUS.store(status, Ordering::Relaxed);
     }
 }
+/// gets the exit code of the last command
 pub fn get_exit_code() -> i32 {
     unsafe {
         EXIT_STATUS.load(Ordering::Relaxed)
     }
 }
 
-
+/// This is where we start evaluating an AST
+/// We extract the list out of the CompleteCommand then parse the list in
+/// the function parse_tree
 pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
 
     let list = match &mut ast.list {
@@ -47,6 +53,9 @@ pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
     Ok(result)
 }
 
+/// This is where we evaluate a CompletCommand's list which is a Vec<AndOr>
+/// We iterate through the list and evaluate each AndOr in the list
+/// We return the status of the last AndOr in the list
 fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
     let mut status = -1;
 
@@ -58,6 +67,11 @@ fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
     Ok(status)
 }
 
+/// This is where we evaluate an AndOr
+/// We check if the AndOr has a conditional AndOr and if id does
+/// we evaluate the conditional AndOr and check the status and evaluate the correct branch
+/// After we evaluate the conditonal AndOr (if it exists) and the correct branch
+/// we evaluate the pipeline and return the status of the pipeline.
 fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
 
     if and_or.and_or.is_none() {
@@ -86,6 +100,16 @@ fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
     Ok(status)
 }
 
+/// This is where we evaluate a pipeline
+/// We iterate through the pipeline and evaluate each command in the pipeline
+/// If the evaluation creates Processes we then create a Job and execute the job.
+/// If the job is not a background job we wait for the job to finish and return the status
+/// Functions are handled here in a special way. If the function is not in the background, we
+/// execute the function before going into the the fork and exec loop, removing it from the pipeline.
+/// We also have to remove the job from the shell to prevent a panic when trying to wait for the job.
+/// If the function is in the background we just add it to the pipeline and let the fork and exec loop
+/// handle it.
+/// Interupts are blocked during the fork and exec part to prevent being interupted by a signal.
 fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
 
     let background = pipeline.background;
@@ -275,7 +299,9 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
     Ok(get_exit_code())
 }
 
-
+/// This command evaluates a Command and returns a None if the command is a function definition or a shell builtin.
+/// if the command is not one of the above two then it returns a tuple with a Process and the SimpleCommand that
+/// made the Process.
 fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
 
     match command {
@@ -293,6 +319,7 @@ fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>
 
 }
 
+/// This function evaluates a function definition and adds it to the current context's function table.
 fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
     let name = &function_definition.name;
     let body = function_definition.function_body.clone();
@@ -300,6 +327,8 @@ fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Res
     Ok(None)
 }
 
+/// This function evaluates a simple command and returns a tuple with a Process and the SimpleCommand that
+/// made the Process.
 fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
    
     if check_if_builtin(&simple_command.name) {
@@ -321,6 +350,7 @@ fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Pro
     Ok(Some((process,simple_command.clone())))// this clone is bad and should be replaced
 }
 
+/// This function evaluates a SimpleCommand's Prefix and Suffix.
 fn eval_prefix_suffix(prefix_suffix: (Option<&Prefix>, Option<&Suffix>)) {
     let (prefix, suffix) = prefix_suffix;
     if prefix.is_some() {
@@ -332,6 +362,7 @@ fn eval_prefix_suffix(prefix_suffix: (Option<&Prefix>, Option<&Suffix>)) {
     }
 }
 
+/// This function evaluates an assignment in a SimpleCommand's Prefix.
 fn eval_assignment(assignment: &Vec<String>) {
     for assign in assignment.iter() {
         let assign = assign.split('=').collect::<Vec<&str>>();
@@ -339,6 +370,7 @@ fn eval_assignment(assignment: &Vec<String>) {
     }
 }
 
+/// This function evaluates an IoRedirect in a SimpleCommand's Prefix or Suffix.
 fn eval_redirect(redirect: &Vec<IoRedirect>) {
     for redir in redirect.iter() {
         if redir.io_file.is_some() {
@@ -378,7 +410,7 @@ fn eval_redirect(redirect: &Vec<IoRedirect>) {
     }
 }
 
-
+/// This function checks if a command is a shell builtin.
 fn check_if_builtin(cmd_name: &str) -> bool {
     match cmd_name {
         "cd" => true,
@@ -393,6 +425,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
     }
 }
 
+/// This function evaluates a shell builtin. We should handle the error properly here.
 fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
     match command.name.as_str() {
         "cd" => {
@@ -437,10 +470,12 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
     }
 }
 
+/// This function checks if a command is a shell function.
 fn check_if_function(cmd_name: &str) -> bool {
     shell::is_function(cmd_name)
 }
 
+/// This function evaluates a shell function.
 fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     let function = shell::get_function(&command.name);
     if function.is_none() {
@@ -469,6 +504,7 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
     Ok(0)//todo: change this to return the right exit code
 }
 
+/// This function evaluates a CompoundCommand.
 fn eval_compound_command(command: &mut CompoundCommand) {
     match command {
         CompoundCommand::BraceGroup(bg) => {
@@ -478,10 +514,13 @@ fn eval_compound_command(command: &mut CompoundCommand) {
     }
 }
 
+/// This function evaluates a CompoundList.
 fn eval_compound_list(compound_list: &mut CompoundList) {
     parse_tree(&mut compound_list.0.0);
 }
 
+/// This function is a wraper for fork().
+/// It also sets up the command's pid in the parent and sets the shell's forked flag in the child.
 fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
     match unsafe {fork()}?{
         ForkResult::Parent { child } => {
@@ -497,7 +536,7 @@ fn temp_fork(command: &mut Process) -> Result<Pid,Errno> {
     }
 }
 
-
+/// This function is a wrapper for execv().
 fn temp_exec(process: &mut Process) -> Result<i32,String> {
 
     //set env
