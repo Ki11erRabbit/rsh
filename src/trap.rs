@@ -15,24 +15,35 @@ use crate::jobs::{self,JobState};
 use crate::shell;
 use crate::shell::ShellJobUtils;
 
+/// This constant represents that a signal should use its default behavior
 const S_DFL: usize = 1;
+/// This constant represents that a signal should be caught
 const S_CATCH: usize = 2;
+/// This constant represents that a signal should be ignored
 const S_IGN: usize = 3;
+/// This constant represents that a signal should be ignored no matter what
 const S_HARD_IGN: usize = 4;
+/// This constant represents that a signal should be reset to its default behavior
 const S_RESET: usize = 5;
 
+/// This global represents if the shell has received a SIGCHLD signal
 static mut GOT_SIGCHLD: AtomicBool = AtomicBool::new(false);
+/// This global represents if the shell has received a SIGINT signal that has not been handled
 static mut SIGINT_PENDING: AtomicBool = AtomicBool::new(false);
+/// This global represents if the shell should supress SIGINT signals
 static mut SUPRESS_SIGINT: AtomicBool = AtomicBool::new(false);
+/// This global holds the a pending signal that has not been handled
 static mut PENDING_SIGNAL: Option<Signal> = None;
+/// This global represents if the shell should block signals
 static mut BLOCK_SIGNALS: AtomicBool = AtomicBool::new(false);
 
 lazy_static! {
+    /// While this should be in the shell struct, because of the way that rustyline works, having it in the shell causes a thread panic.
     static ref TRAP_DATA: TrapWrapper = TrapWrapper::new(RefCell::new(TrapData::new()));
 }
 
 
-/*
+/**
  * This isn't pretty but it gets the job done. If only the Unix developers realized that signals
  * should be done similar to how Windows does it.
  */
@@ -47,26 +58,34 @@ impl TrapWrapper {
         }
     }
 
+    /// A wrapper function that acesses the refcell data
     pub fn get(&self) -> Ref<'_,TrapData> {
         self.data.borrow()
     }
+    /// A wrapper function that acesses the refcell data mutably
     pub fn get_mut(&self) -> RefMut<'_,TrapData> {
         self.data.borrow_mut()
     }
 }
 
+/// This is so that we can use the TrapWrapper as a global without having to use a mutex which could cause a deadlock
 unsafe impl std::marker::Sync for TrapWrapper {}
 unsafe impl std::marker::Send for TrapWrapper {}
 
-
+/// This struct holds all the information on about the traps that are set as well as modes for each of the signals
 pub struct TrapData {
+    /// This hashmap holds the script strings to be executed when a signal is received
     traps: HashMap<Signal, String>,
+    /// This hashmap holds the modes for each signal
     signal_mode: HashMap<Signal, usize>,
+    /// This vec holds a bool to mark if a signal has been received
     got_sig: Vec<bool>,
+    /// This holds a pending signal that has not been handled
     pending_signal: Option<Signal>,
 }
 
 impl TrapData {
+    /// On Linux there are 32 signals that are defined.
     pub fn new() -> Self {
         Self {
             traps: HashMap::new(),
@@ -78,36 +97,43 @@ impl TrapData {
 }
 
 
+/// This function checks to see if there is an action for a given signal
 pub fn is_trap_set(signal: Signal) -> bool {
     let data = TRAP_DATA.get();
     data.traps.contains_key(&signal)
 }
 
+/// This function gets a script string for a given signal
+/// Returns None if there is no script string for the given signal
 pub fn get_trap(signal: Signal) -> Option<String> {
     let data = TRAP_DATA.get();
     data.traps.get(&signal).map(|s| s.to_string())
 }
 
+/// This function sets the mode for a given signal
 pub fn set_signal_mode(signal: Signal, mode: usize) {
     let mut data = TRAP_DATA.get_mut();
     data.signal_mode.insert(signal, mode);
 }
+
+/// This function gets the mode for a given signal
 pub fn get_signal_mode(signal: Signal) -> Option<usize> {
     let data = TRAP_DATA.get();
     data.signal_mode.get(&signal).map(|s| *s)
 }
-
+/// This function sets the got_sig vec for a given signal
 pub fn set_got_sig(sig_num: c_int) {
     let mut data = TRAP_DATA.get_mut();
     data.got_sig[sig_num as usize] = true;
 }
 
+/// This function sets the current pending signal
 pub fn set_pending_signal(sig_num: c_int) {
     let mut data = TRAP_DATA.get_mut();
     data.pending_signal = Some(Signal::try_from(sig_num).unwrap());
 }
 
-
+/// This function blocks all signals except for SIGINT and SIGTSTP
 pub fn interrupts_off() {
     let mut sigset = signal::SigSet::all();
     sigset.remove(signal::SIGINT);
@@ -117,9 +143,12 @@ pub fn interrupts_off() {
     signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
     
 }
+/// This function unblocks all signals
 pub fn interrupts_on() {
     sig_clear_mask();
 }
+
+/// This function checks for if we should be blocking signals
 fn is_blocked() -> bool {
     unsafe {
         BLOCK_SIGNALS.load(Ordering::Relaxed)
@@ -144,7 +173,10 @@ pub fn get_pending_signal() -> Option<Signal> {
     }
 }
 
-
+/// This function is the signal handler for all signals
+///
+/// This function is very similar to how the Dash shell does signals. The only difference being that we handle the SIGCHLD signal.
+/// This function returns early if we are in the child.
 extern "C" fn on_sig(sig_num: c_int) {
     if is_blocked() {
         return;
@@ -185,7 +217,10 @@ extern "C" fn on_sig(sig_num: c_int) {
     }
 }
 
-
+/// This is the signal handler for SIGCHLD.
+///
+/// We have to do some interesting logic here since if we accidentally wait on a non-background process then we will have to return early.
+/// If the process is in the background then we can wait on it.
 fn sig_chld() {
     let pid = Pid::from_raw(-1);
 
@@ -242,7 +277,7 @@ fn sig_chld() {
     }
 }
 
-
+/// This functions is called if the signal was a SIGINT.
 pub fn on_sigint() {
     unsafe {
         SIGINT_PENDING.store(false, Ordering::Relaxed);
@@ -254,6 +289,9 @@ pub fn on_sigint() {
     //exitstatus = 128 + sigint
 }
 
+/// This function clears the signal mask
+/// # Panics
+/// This function panics if sigprocmask fails
 fn sigclearmask() {
     //sigsetmask(0);
 
@@ -262,6 +300,8 @@ fn sigclearmask() {
 }
 
 
+/// This function sets up the signal handler for signals
+/// It takes in a c_int which is the signal number
 pub fn set_signal(sig_num: c_int) {
     let sig_handler;
     let mut action;
@@ -364,17 +404,20 @@ pub fn set_signal(sig_num: c_int) {
     }
 }
 
+/// This function blocks all signals and uses the old_mask to store the old mask
 pub fn sig_block_all(old_mask: &mut signal::SigSet) {
     let sigset = signal::SigSet::all();
     signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), Some(old_mask)).unwrap();
 }
 
-
+/// This function clears the signal mask
 pub fn sig_clear_mask() {
     let sigset = signal::SigSet::empty();
     signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
 }
 
+/// This function should be the same as sigsuspend but there are problems so far
+/// It is hard to test since I am not aware of the logic needed to test it
 pub fn sig_suspend(mask: &signal::SigSet) {
     return;
     while get_pending_signal().is_none() {
@@ -391,7 +434,10 @@ pub fn sig_suspend(mask: &signal::SigSet) {
     }*/
 }
 
-//todo: make this more inclusive
+/// This function removes all signal handlers
+/// however it is not complete
+/// # Todo
+/// make this more inclusive
 pub fn remove_handlers() {
     let sigset = signal::SigSet::empty();
     signal::sigprocmask(signal::SigmaskHow::SIG_SETMASK, Some(&sigset), None).unwrap();
