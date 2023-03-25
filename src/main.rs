@@ -8,6 +8,8 @@ mod eval;
 mod jobs;
 mod builtins;
 mod trap;
+#[macro_use]
+mod log;
 mod var;
 //mod eval_alt;
 //mod exec;
@@ -160,6 +162,9 @@ fn parse_dash_arg(arg: &str) -> bool {
                     //set all args following -c to be the args $0, $1, $2, etc
                     
                 },
+		'l' => {
+		    log::set_print_out(true);
+		},
                 _ => {
                     //error
                 }

@@ -12,6 +12,7 @@ use nix::sys::signal::Signal;
 use crate::jobs;
 use crate::trap;
 use crate::eval;
+use crate::log;
 use crate::context::ContextUtils;
 use crate::context::Context;
 
@@ -64,7 +65,7 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
 /// it will exit with that status code.
 pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     shell::save_history();
-    if command.suffix.is_none() {
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.is_empty() {
         exit(0);
     }
     //let chars = command.suffix.as_ref().unwrap().word[0].chars();
@@ -363,3 +364,33 @@ pub fn return_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
     exit(code);
 }
 
+/// This is the 'eval' command of the shell.
+/// It evaluates a string as a command.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'string'.
+pub fn eval_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() {
+	return Err(std::io::Error::new(std::io::ErrorKind::Other, "eval needs an argument"));
+    }
+
+
+    let string = command.suffix.as_ref().unwrap().word[0].as_str().to_string() + "\n";
+    
+    let mut lexer = Lexer::new(string.as_str());
+    let mut ast = match grammar::CompleteCommandParser::new().parse(string.as_str(),lexer) {
+	Ok(ast) => ast,
+	Err(e) => {
+		return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error parsing file: {}", e)));
+	}
+    };
+
+    log!("AST: {:?}", ast);
+    match eval::eval(&mut ast) {
+	Ok(_) => {},
+	Err(e) => {
+	    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error evaluating string: {}", e)));
+	}
+    }
+
+    
+    Ok(())
+}

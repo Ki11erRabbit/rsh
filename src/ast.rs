@@ -5,8 +5,10 @@ use std::io::{Read, Write};
 use std::os::unix::io::FromRawFd;
 use crate::lexer::Lexer;
 use crate::shell;
+use crate::log;
 use lalrpop_util::lalrpop_mod;
 use std::ffi::CString;
+use core::str::Split;
 
 #[derive(Debug,Clone,PartialEq)]
 pub struct CompleteCommand {
@@ -195,6 +197,57 @@ pub struct SimpleCommand {
     pub suffix: Option<Suffix>,
 }
 
+#[derive(Debug,Clone,PartialEq)]
+enum QuoteType {
+    None,
+    Single,
+    Double,
+}
+
+pub trait SplitWhitespaceIgnoringQuotes {
+    fn split_whitespace_ig_qts(&self) -> Vec<&str>;
+}
+
+impl SplitWhitespaceIgnoringQuotes for str {
+    fn split_whitespace_ig_qts<'input>(&'input self) -> Vec<&'input str> {
+        //eprintln!("split_whitespace_ig_qts: {}", self);
+        let mut quote_type = QuoteType::None;
+        let mut start = 0;
+        let mut end = 0;
+        let mut splits: Vec<&'input str> = Vec::new();
+        for (i, c) in self.char_indices() {
+            match quote_type {
+                QuoteType::None => {
+                    if c == '\'' {
+                        quote_type = QuoteType::Single;
+                    } else if c == '"' {
+                        quote_type = QuoteType::Double;
+                    } else if c.is_whitespace() {
+                        end = i;
+                        splits.push(&self[start..end]);
+                        start = i + 1;
+                    }
+                }
+                QuoteType::Single => {
+                    if c == '\'' {
+                        quote_type = QuoteType::None;
+                    }
+                }
+                QuoteType::Double => {
+                    if c == '"' {
+                        quote_type = QuoteType::None;
+                    }
+                }
+            }
+        }
+        if start < self.len() {
+            splits.push(&self[start..]);
+        }
+        splits
+
+    }
+}
+
 lalrpop_mod!(pub grammar);
 impl SimpleCommand {
     pub fn alias_lookup(&mut self) {
@@ -327,9 +380,12 @@ impl SimpleCommand {
             chars.next();
             chars.next_back();
         }
-        else {
+        else if subshell.starts_with("`"){
             chars.next();
             chars.next_back();
+        }
+        else {
+            return subshell.to_string();
         }
 
         let subshell = &chars.collect::<String>();
@@ -394,6 +450,7 @@ impl SimpleCommand {
         if !temp.contains('\''){
             words = temp.split_whitespace().collect::<Vec<&str>>();
             let mut new_words = if temp.contains("\"") {
+		log!("recombine_double_quotes");
                 Self::recombine_double_quotes(&mut words)
             } 
             else {
@@ -418,6 +475,7 @@ impl SimpleCommand {
                     else {
                         let mut temp_words = word.split_whitespace().collect::<Vec<&str>>();
                         let mut new_words = if word.contains("\"") {
+			    log!("recombine_double_quotes");
                             Self::recombine_double_quotes(&mut temp_words)
                         } 
                         else {
@@ -520,6 +578,128 @@ impl SimpleCommand {
 
         *word = chars.collect::<String>();
     }
+
+    pub fn eval(&mut self) {
+        if self.name.starts_with('\'') {
+            Self::cut_quotes(&mut self.name);
+        }
+        let mut words = Vec::new();
+        for word in self.name.split_whitespace_ig_qts().iter() {
+            if word.starts_with('"') {
+                words.append(&mut Self::eval_double_quotes(word));
+            }
+            else {
+                words.push(word.to_string());
+            }
+        }
+        self.name = words.remove(0);
+        
+        if self.suffix.is_none() || self.suffix.as_ref().unwrap().word.is_empty() {
+            self.suffix = Some(Suffix {
+                io_redirect: Vec::new(),
+                word: words,
+            });
+            return;
+        }
+        else {
+            let mut new_words = words;
+            for word in self.suffix.as_ref().unwrap().word.iter() {
+                if word.starts_with('"') {
+                    new_words.append(&mut Self::eval_double_quotes(word));
+                }
+                else if word.starts_with('\'') {
+                    let mut new_word = word.to_string();
+                    Self::cut_quotes(&mut new_word);
+                    new_words.push(new_word);
+                }
+                else {
+                    new_words.push(word.to_string());
+                }
+            }
+            self.suffix.as_mut().unwrap().word = new_words;
+        }
+
+    }
+
+    fn eval_double_quotes(word: &str) -> Vec<String> {
+        if !word.contains("$(") && !word.contains("`") {
+            let mut new_word = word.to_string();
+            Self::cut_quotes(&mut new_word);
+            return vec![new_word];
+        }
+        let mut new_word = word.to_string();
+        Self::cut_quotes(&mut new_word);
+        let mut ret = Vec::new();
+        let eval = Self::eval_subshell(&new_word);
+        if eval.contains(" ") {
+            ret.append(&mut eval.split_whitespace().map(|word| word.to_string()).collect());
+        }
+        else {
+            ret.push(eval);
+        }
+        ret
+    }
+
+    /*pub fn eval_double_quotes(&mut self) {
+
+        eprintln!("\n\n{:?}", self.name.split_whitespace_ig_qts());
+
+
+        if (self.name.starts_with("\"")) && (self.name.ends_with("\"")) {
+            Self::cut_quotes(&mut self.name);
+
+        }
+        
+        self.name = Self::eval_subshell(&self.name);
+        let mut words;
+        let name = self.name.clone();
+        if self.name.contains(" ") {
+            words = name.split_whitespace().collect::<Vec<&str>>();
+            self.name = words.remove(0).to_string();
+        }
+        else {
+            words = Vec::new();
+        }
+        if self.suffix.is_none() {
+            if words.len() > 0 {
+                self.suffix = Some(Suffix {
+                    io_redirect: Vec::new(),
+                    word: words.iter().map(|word| word.to_string()).collect(),
+                });
+            }
+            return;
+        }
+        if self.suffix.is_some() {
+            if self.suffix.as_ref().unwrap().word.len() > 0 {
+                eprintln!("{:?}\n\n", self.suffix.as_ref().unwrap().word[0].split_whitespace_ig_qts());
+            }
+            else {
+                eprintln!("\n\n");
+            }
+        }
+        else {
+            eprintln!("\n\n");
+        }
+        for word in self.suffix.as_mut().unwrap().word.iter_mut() {
+            if (word.starts_with("\"")) && (word.ends_with("\"")) {
+                Self::cut_quotes(word);
+                if word.contains("$(") || word.contains("`") {
+                    *word = Self::eval_subshell(word);
+                    if word.contains(" ") {
+                        let mut temp_words = word.split_whitespace().collect::<Vec<&str>>();
+                        words.append(&mut temp_words);
+                    }
+                }
+                else {
+                    words.push(word);
+                }
+            }
+            else {
+                words.push(word);
+            }
+        }
+        self.suffix.as_mut().unwrap().word = words.iter().map(|word| word.to_string()).collect();
+    }*/
 
     pub fn remove_double_quotes(&mut self) {
         if (self.name.starts_with("\"")) && (self.name.ends_with("\"")) {

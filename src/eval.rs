@@ -12,6 +12,7 @@ use std::os::unix::io::AsRawFd;
 use std::mem;
 use std::env;
 use std::sync::atomic::{AtomicI32, Ordering};
+use crate::log;
 
 use std::os::unix::io::RawFd;
 use nix::unistd::{close, dup2, pipe,execv, fork, getpid, setpgid, ForkResult, Pid};
@@ -335,13 +336,29 @@ fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Pro
         return eval_builtin(simple_command);
     }
 
+    
+    //todo make this one function to resolve problems
+    /*log!("eval_simple_command: {:?}", simple_command);
+    simple_command.remove_whitespace();
+    simple_command.eval_double_quotes();
+    log!("eval_double_quotes: {:?}", simple_command);
+    simple_command.alias_lookup();
+    log!("alias_lookup: {:?}", simple_command);
+    simple_command.expand_vars();
+    log!("expand_vars: {:?}", simple_command);
     simple_command.remove_double_quotes();
-    simple_command.expand_subshells();
+    log!("remove_double_quotes: {:?}", simple_command);
+    simple_command.remove_single_quotes();
+    log!("remove_single_quotes: {:?}", simple_command);*/
+
     simple_command.alias_lookup();
     simple_command.expand_vars();
-    simple_command.remove_whitespace();
-    simple_command.remove_single_quotes();
+    simple_command.eval();
+   
+    
 
+    //log!("eval_simple_command: {:?}", simple_command);
+    
     //todo deal with redirection and assignment
     let argv: Vec<CString> = simple_command.argv();
 
@@ -420,13 +437,33 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "alias" | "unalias" => true,
         "export" => true,
         "return" => true,
+	"eval" => true,
         "" => true,
         _ => false
     }
 }
 
 /// This function evaluates a shell builtin. We should handle the error properly here.
-fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+
+    /*command.remove_whitespace();
+    log!("eval_simple_command: {:?}", command);
+    command.eval_double_quotes();
+    log!("eval_double_quotes: {:?}", command);
+    command.alias_lookup();
+    log!("alias_lookup: {:?}", command);
+    command.expand_vars();
+    log!("expand_vars: {:?}", command);
+    command.remove_double_quotes();
+    log!("remove_double_quotes: {:?}", command);
+    command.remove_single_quotes();
+    log!("remove_single_quotes: {:?}", command);*/
+
+
+    command.alias_lookup();
+    command.expand_vars();
+    command.eval();
+    
     match command.name.as_str() {
         "cd" => {
             builtins::change_directory(command).unwrap();//TODO: properly handle error
@@ -460,6 +497,10 @@ fn eval_builtin(command: &SimpleCommand) -> Result<Option<(Process,SimpleCommand
             builtins::return_cmd(command).unwrap();
             Ok(None)
         },
+	"eval" => {
+	    builtins::eval_cmd(command).unwrap();
+	    Ok(None)
+	},
         "" => {
             builtins::assignment(command).unwrap();
             Ok(None)
@@ -497,8 +538,9 @@ fn eval_function(command: &mut SimpleCommand) -> Result<i32,&'static str> {
         }
     }
 
+    let mut function = function.unwrap().borrow().clone();
 
-    eval_compound_command(&mut function.unwrap().borrow_mut().compound_command);
+    eval_compound_command(&mut function.compound_command);
     shell::pop_context();
 
     Ok(0)//todo: change this to return the right exit code

@@ -105,7 +105,11 @@ fn command_complete(line: &str) -> Vec<Pair> {
     let mut entries = Vec::new();
 
     for path in paths {
-        for entry in fs::read_dir(path).unwrap() {
+        let entry_fs = fs::read_dir(path);
+        if entry_fs.is_err() {
+            continue;
+        }
+        for entry in entry_fs.unwrap() {
             let entry = entry.unwrap();
             let name = entry.file_name().into_string().unwrap();
 
