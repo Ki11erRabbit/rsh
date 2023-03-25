@@ -4,9 +4,12 @@ use std::env;
 use nix::unistd::{Pid, getpid, getppid, getuid, Uid};
 use std::fs::metadata;
 
+/// The default prompt for a regular user
 const REG_USER_PROMPT: &str = "$ ";
+/// The default prompt for a super user (root)
 const SUP_USER_PROMPT: &str = "# ";
 
+/// A struct to hold a variable
 #[derive(Debug, Clone)]
 pub struct Var {
     pub name: String,
@@ -23,6 +26,7 @@ impl Var {
 }
 
 impl ToString for Var {
+    /// Converts a variable to a key=value string
     fn to_string(&self) -> String {
         format!("{}={}", self.name, self.value)
     }
@@ -30,12 +34,13 @@ impl ToString for Var {
 
 
 
-
+/// A trait to allow for manipulating the variable data in an abstract way
 pub trait VarDataUtils<V> {
     fn update_path(&mut self, path: V);
     fn add_var(&mut self, var: V, position: isize);
 }
 
+/// A data structure to deal with variables in the shell.
 #[derive(Debug, Clone)]
 pub struct VarData {
     local_vars: HashMap<String, Var>,

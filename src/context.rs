@@ -8,9 +8,12 @@ use nix::unistd::{getpid, getppid, getuid,Uid};
 
 use crate::ast::FunctionBody;
 
+/// Default prompt for a regular user
 const REG_USER_PROMPT: &str = "$ ";
+/// Default prompt for a super user (root)
 const SUP_USER_PROMPT: &str = "# ";
 
+/// A struct to represent a variable
 #[derive(Debug, Clone)]
 pub struct Var {
     pub name: String,
@@ -25,6 +28,7 @@ impl Var {
         }
     }
 
+    /// Adds an variable to the environment
     fn export(&mut self) {
         env::set_var(&self.name, &self.value);
     }
@@ -35,9 +39,15 @@ impl ToString for Var {
     }
 }
 
+/// A struct that manages Contexts of a shell
 #[derive(Debug, Clone)]
 pub struct ContextManager {
+    /// A stack of contexts
+    /// The first context is always the environment context where it holds everything from /etc/profile and what
+    /// has been exported from other contexts
     context_stack: Vec<Rc<RefCell<Context>>>,
+    /// This holds all the contexts that have been exported
+    /// The key is a namespace for the context
     exported_contexts: HashMap<String,Rc<RefCell<Context>>>,
 }
 
@@ -46,37 +56,48 @@ impl ContextManager {
         Self::default()
     }
 
+    /// Pushes a new context onto the stack with a given Context
     pub fn push_context(&mut self, context: Context) {
         self.context_stack.push(Rc::new(RefCell::new(context)));
     }
+    /// Pushes a new context onto the stack with a default Context
     pub fn push_context_new(&mut self) {
         self.context_stack.push(Rc::new(RefCell::new(Context::default())));
     }
 
+    /// Removes the last context from the stack and returns it
+    /// # Panics
+    /// Panics if the last context is attempted to be removed
     pub fn pop_context(&mut self) -> Option<Rc<RefCell<Context>>> {
         if self.context_stack.len() == 1 {//to prevent deleting the global context
-            return None;
+            panic!("Cannot delete global context");
         }
         self.context_stack.pop()
     }
 
+    /// Returns a reference to the current Context.
     pub fn get_context(&self) -> Rc<RefCell<Context>> {
         self.context_stack.last().unwrap().clone()
     }
 
+    /// Returns a reference to the environment Context or Context 0.
     pub fn get_env_context(&self) -> Rc<RefCell<Context>> {
         self.context_stack.first().unwrap().clone()
     }
 
-
+    /// Adds a context with a namespace to the exported contexts.
     pub fn add_context(&mut self, name: &str, context: Rc<RefCell<Context>>) {
         self.exported_contexts.insert(name.to_string(), context);
     }
 
+    /// Returns a reference to a context with a given namespace.
     pub fn get_context_by_name(&self, name: &str) -> Option<Rc<RefCell<Context>>> {
         self.exported_contexts.get(name).cloned()
     }
 
+    /// Gets a variable from the contexts.
+    /// It will never attempt to get a variable from an exported context without a namespace.
+    /// It will search the Context stack in reverse order for the variable.
     pub fn get_var(&self, name: &str) -> Option<Rc<RefCell<Var>>> {
         if name.contains("::") {
             let mut split = name.split("::");
@@ -98,6 +119,10 @@ impl ContextManager {
         }
     } 
 
+
+    /// Gets a function from the Contexts.
+    /// It will never attempt to get a function from an exported context without a namespace.
+    /// It will search the Context stack in reverse order for the function.
     pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         if name.contains("::") {
             let mut split = name.split("::");
@@ -119,6 +144,7 @@ impl ContextManager {
         }
     }
 
+    /// Checks to see if a name corresponds to a function name.
     pub fn is_function(&self, name: &str) -> bool {
         if name.contains("::") {
             let mut split = name.split("::");
@@ -140,10 +166,12 @@ impl ContextManager {
         }
     }
 
+    /// Adds a function to the current context.
     pub fn add_function(&mut self, name: &str, func: Rc<RefCell<FunctionBody>>) {
         self.get_context().borrow_mut().add_function(name, func);
     }
 
+    /// Adds a variable to the current context.
     pub fn add_var(&mut self, set: &str) {
         let mut split = set.split("=");
         let name = split.next().unwrap();
@@ -157,10 +185,12 @@ impl ContextManager {
         self.get_context().borrow_mut().add_var(set);
     }
 
+    /// Adds a variable to a particular context on the stack.
     pub fn add_var_pos(&mut self, set: &str, pos: usize) {
         self.context_stack[pos].borrow_mut().add_var(set);
     }
 
+    /// Looks up a command in the PATH variable.
     pub fn lookup_command(&self, cmd: &str) -> Option<String> {
         for path in self.context_stack.first().unwrap().borrow().get_var("PATH").unwrap().borrow().value.split(":") {
             let path = format!("{}/{}", path, cmd);
@@ -175,6 +205,8 @@ impl ContextManager {
     }
 
 
+    /// Returns a list of all variables in all contexts.
+    /// The reason why this is a BTreeMap is because it is used to print out the variables, which must be in alphabetical order.
     pub fn all_vars(&self) -> BTreeMap<String, Rc<RefCell<Var>>> {
         let mut vars = BTreeMap::new();
         for context in &self.context_stack {
@@ -190,6 +222,7 @@ impl ContextManager {
         vars
     }
 
+    /// Converts the environment variables into a HashMap of variables.
     fn convert_env() -> HashMap<String, Rc<RefCell<Var>>> {
         let mut vars = HashMap::new();
         for (key, value) in std::env::vars() {
@@ -241,9 +274,14 @@ pub trait ContextUtils<V> {
     fn add_var(&mut self, var: V);
 }
 
+/// A struct that represents a context.
+/// A context is similar to a stack frame in other programming languages.
+/// The difference is that functions can also be stored in a context.
 #[derive(Debug, Clone)]
 pub struct Context {
+    /// Stores the variables of the context.
     pub vars: HashMap<String, Rc<RefCell<Var>>>,
+    /// Stores the functions of the context.
     functions: HashMap<String, Rc<RefCell<FunctionBody>>>,
 }
 
@@ -255,18 +293,31 @@ impl Context {
         }
     }
 
+    /// Gets a variable from the context with a given name.
     pub fn get_var(&self, name: &str) -> Option<Rc<RefCell<Var>>> {
         self.vars.get(name).cloned()
     }
 
+    /// Gets a function from the context with a given name.
     pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         self.functions.get(name).cloned()
     }
 
+    /// Adds a function to the context with a given name.
     pub fn add_function(&mut self, name: &str, body: Rc<RefCell<FunctionBody>>) {
         self.functions.insert(name.to_string(), body);
     }
 
+    /// Internal function that removes quotes from a string.
+    /// # Arguments
+    /// * `word` - The &str to remove quotes from.
+    /// # Example
+    /// ```
+    /// use shell::context::Context;
+    /// let word = "\"hello\"";
+    /// let trimmed = Context::trim(word);
+    /// assert_eq!(trimmed, "hello");
+    /// ```
     fn trim(word: &str) -> String {
         if (word.starts_with("\"") && word.ends_with("\"")) || (word.starts_with("'") && word.ends_with("'")){
             let mut chars = word.chars();
@@ -291,7 +342,9 @@ impl Default for Context {
 
 
 impl ContextUtils<&str> for Context {
-
+    /// Adds a variable to the context in the format of `name=value`.
+    /// # Arguments
+    /// * `var` - The &str set that is to be added to the context.
     fn add_var(&mut self, var: &str) {
         let (name, value) = if var.contains("=") {
             let mut split = var.split("=");
@@ -317,6 +370,10 @@ impl ContextUtils<&str> for Context {
 }
 
 impl ContextUtils<(&str, &str)> for Context {
+
+    /// Adds a variable to the context in the format of `(name, value)`.
+    /// # Arguments
+    /// * `var` - A tuple of &str to be add to the context.
     fn add_var(&mut self, (name, value): (&str, &str)) {
         let var_struct = Var::new(name, &Self::trim(value));
 
@@ -335,6 +392,9 @@ impl ContextUtils<(&str, &str)> for Context {
 }
 
 impl ContextUtils<Var> for Context {
+    /// Adds a variable to the context.
+    /// # Arguments
+    /// * `var` - The Var struct to be added to the context.
     fn add_var(&mut self, var: Var) {
         self.vars.insert(var.name.to_string(), Rc::new(RefCell::new(var)));
     }
