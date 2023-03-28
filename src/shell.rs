@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap,HashSet, HashMap};
 use crate::jobs::{Job, Process, JobControl, JobUtils, JobId};
 use crate::trap;
 use nix::unistd::Pid;
@@ -247,6 +247,9 @@ impl Shell {
     pub fn add_context(&mut self, namespace:&str, context: Rc<RefCell<Context>>) {
         self.context_manager.add_context(namespace,context);
     }
+    pub fn remove_context(&mut self, namespace: &str) {
+        self.context_manager.remove_context(namespace);
+    }
     /// This grabs the current context from the Context stack.
     pub fn get_current_context(&self) -> Rc<RefCell<Context>> {//todo: get rid of clone
         self.context_manager.get_context().clone()
@@ -276,6 +279,23 @@ impl Shell {
         //let pos = self.var_data.get_current_context_pos();
         //self.var_data.add_var(set, pos);
     }
+    pub fn add_var_readonly(&mut self, set: &str) {
+        self.context_manager.add_var_readonly(set);
+    }
+    pub fn set_var_readonly(&mut self, var: &str) {
+        self.context_manager.set_var_readonly(var);
+    }
+    pub fn all_readonly_vars(&self) -> BTreeMap<String, Rc<RefCell<crate::context::Var>>> {
+        self.context_manager.all_readonly_vars()
+    }
+    pub fn all_readonly_vars_context(&self, context: &str) -> BTreeMap<String, Rc<RefCell<crate::context::Var>>> {
+        self.context_manager.all_readonly_vars_context(context)
+    }
+
+    /// Wrapper to the context manager remove var function.
+    pub fn remove_var(&mut self, var: &str) {
+	self.context_manager.remove_var(var);
+    }
     /// This function takes in a &str and returns the value of the variable if it exists.
     pub fn expand_variable(&mut self, var: &str) -> Option<String> {
         let var = self.context_manager.get_var(var);
@@ -302,6 +322,14 @@ impl Shell {
     pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         self.context_manager.get_function(name)
         //self.functions.get(name)
+    }
+
+    pub fn get_readonly_functions(&self) -> HashSet<String> {
+        self.context_manager.all_readonly_functions()
+    }
+
+    pub fn remove_function(&mut self, name: &str) {
+	    self.context_manager.remove_function(name);
     }
 
     /// This is an internal function that trims off the quotes from a string.
@@ -573,6 +601,10 @@ pub fn add_context(namespace: &str, context: Rc<RefCell<Context>>) {
     let mut shell = SHELL.get().borrow_mut();
     shell.add_context(namespace, context);
 }
+pub fn remove_context(namespace: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.remove_context(namespace);
+}
 /// This function gets the current context from the context stack.
 pub fn get_current_context() -> Rc<RefCell<Context>> {
     let shell = SHELL.get().borrow();
@@ -589,6 +621,18 @@ pub fn add_var(set: &str, index: usize) {
     let mut shell = SHELL.get().borrow_mut();
     shell.add_var(set, index);
 }
+pub fn add_readonly_var(var: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.add_var_readonly(var);
+}
+pub fn set_readonly_var(name: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.set_var_readonly(name);
+}
+pub fn remove_var(var: &str) {
+    let mut shell = SHELL.get().borrow_mut();
+    shell.remove_var(var);
+}
 /// This function adds a variable to the shell at the current context.
 pub fn add_var_context(set: &str) {
     let mut shell = SHELL.get().borrow_mut();
@@ -598,6 +642,18 @@ pub fn add_var_context(set: &str) {
 pub fn expand_var(var: &str) -> Option<String> {
     let mut shell = SHELL.get().borrow_mut();
     shell.expand_variable(var)
+}
+pub fn print_readonly_vars() {
+    let shell = SHELL.get().borrow();
+    shell.all_readonly_vars().iter().for_each(|var| {
+        println!("{}", var.1.borrow());
+    });
+}
+pub fn print_readonly_vars_context(namespace: &str) {
+    let shell = SHELL.get().borrow();
+    shell.all_readonly_vars_context(namespace).iter().for_each(|var| {
+        println!("{}", var.1.borrow());
+    });
 }
 
 /// This function sets $0 to the script name.
@@ -623,4 +679,14 @@ pub fn is_function(name: &str) -> bool {
 pub fn get_function(name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
     let shell = SHELL.get().borrow();
     shell.get_function(name)
+}
+pub fn remove_function(name: &str) {
+	let mut shell = SHELL.get().borrow_mut();
+	shell.remove_function(name);
+}
+pub fn print_readonly_functions() {
+    let shell = SHELL.get().borrow();
+    for name in shell.get_readonly_functions().iter() {
+        println!("{}", name);
+    }
 }

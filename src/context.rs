@@ -1,8 +1,9 @@
-use std::collections::{HashMap,BTreeMap};
+use std::collections::{HashMap,BTreeMap,HashSet};
 use std::default::Default;
 use std::env;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::fmt::{Display, Formatter};
 
 use nix::unistd::{getpid, getppid, getuid,Uid};
 
@@ -18,6 +19,7 @@ const SUP_USER_PROMPT: &str = "# ";
 pub struct Var {
     pub name: String,
     pub value: String,
+    pub readonly: bool,
 }
 
 impl Var {
@@ -25,7 +27,12 @@ impl Var {
         Self {
             name: name.to_string(),
             value: value.to_string(),
+            readonly: false,
         }
+    }
+
+    pub fn make_readonly(&mut self) {
+        self.readonly = true;
     }
 
     /// Adds an variable to the environment
@@ -33,9 +40,14 @@ impl Var {
         env::set_var(&self.name, &self.value);
     }
 }
-impl ToString for Var {
+/*impl ToString for Var {
     fn to_string(&self) -> String {
         format!("{}={}", self.name, self.value)
+    }
+}*/
+impl Display for Var {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
     }
 }
 
@@ -79,6 +91,9 @@ impl ContextManager {
     pub fn get_context(&self) -> Rc<RefCell<Context>> {
         self.context_stack.last().unwrap().clone()
     }
+    pub fn remove_context(&mut self, name: &str) {
+        self.exported_contexts.remove(name);
+    }
 
     /// Returns a reference to the environment Context or Context 0.
     pub fn get_env_context(&self) -> Rc<RefCell<Context>> {
@@ -117,7 +132,28 @@ impl ContextManager {
             }
             None
         }
-    } 
+    }
+    /// Removes a variable from a context.
+    /// It will never attempt to remove a variable from an exported context without a namespace.
+    /// It will search the Context stack in reverse order for the variable, stopping at the first one it finds.
+    pub fn remove_var(&mut self, name: &str) {
+        if name.contains("::") {
+            let mut split = name.split("::");
+            let context_name = split.next().unwrap();
+            let var_name = split.next().unwrap();
+            if let Some(context) = self.get_context_by_name(context_name) {
+                context.borrow_mut().remove_var(var_name);
+            }
+        }
+        else {
+            for context in self.context_stack.iter().rev() {
+                if context.borrow().get_var(name).is_some() {
+                    context.borrow_mut().remove_var(name);
+                    return;
+                }
+            }
+        }
+    }
 
 
     /// Gets a function from the Contexts.
@@ -143,6 +179,27 @@ impl ContextManager {
             None
         }
     }
+    /// Removes a function from a context.
+    /// It will never attempt to remove a function from an exported context without a namespace.
+    /// It will search the Context stack in reverse order for the function, stopping at the first one it finds.
+    pub fn remove_function(&mut self, name: &str) {
+        if name.contains("::") {
+            let mut split = name.split("::");
+            let context_name = split.next().unwrap();
+            let func_name = split.next().unwrap();
+            if let Some(context) = self.get_context_by_name(context_name) {
+                context.borrow_mut().remove_function(func_name);
+            }
+        }
+        else {
+            for context in self.context_stack.iter().rev() {
+                if context.borrow().get_function(name).is_some() {
+                    context.borrow_mut().remove_function(name);
+                    return;
+                }
+            }
+        }
+    }
 
     /// Checks to see if a name corresponds to a function name.
     pub fn is_function(&self, name: &str) -> bool {
@@ -166,8 +223,15 @@ impl ContextManager {
         }
     }
 
-    /// Adds a function to the current context.
+    /// Adds a function to the current context if it doesn't already exist.
+    /// If it does exist, it will be overwritten unless it is readonly.
     pub fn add_function(&mut self, name: &str, func: Rc<RefCell<FunctionBody>>) {
+        for context in self.context_stack.iter_mut().rev() {
+            if context.borrow().get_function(name).is_some() {
+                context.borrow_mut().add_function(name, func);
+                return;
+            }
+        }
         self.get_context().borrow_mut().add_function(name, func);
     }
 
@@ -178,11 +242,55 @@ impl ContextManager {
 
         for context in self.context_stack.iter_mut().rev() {
             if context.borrow().get_var(name).is_some() {
+                if context.borrow().get_var(name).unwrap().borrow().readonly {
+                    return;
+                }
                 context.borrow_mut().add_var(set);
                 return;
             }
         }
         self.get_context().borrow_mut().add_var(set);
+    }
+    pub fn add_var_readonly(&mut self, set: &str) {
+        if set.contains("::") {
+            let mut split = set.split("::");
+            let context_name = split.next().unwrap();
+            let var_name = split.next().unwrap();
+            if let Some(context) = self.get_context_by_name(context_name) {
+                context.borrow_mut().add_var_readonly(var_name);
+            }
+            return;
+        }
+        let mut split = set.split("=");
+        let name = split.next().unwrap();
+
+        for context in self.context_stack.iter_mut().rev() {
+            if context.borrow().get_var(name).is_some() {
+                context.borrow_mut().add_var_readonly(set);
+                return;
+            }
+        }
+        self.get_context().borrow_mut().add_var_readonly(set);
+    }
+
+    pub fn set_var_readonly(&mut self, name: &str) {
+        if name.contains("::") {
+            let mut split = name.split("::");
+            let context_name = split.next().unwrap();
+            let var_name = split.next().unwrap();
+            if let Some(context) = self.get_context_by_name(context_name) {
+                context.borrow_mut().get_var(var_name).unwrap().borrow_mut().readonly = true;
+            }
+            return;
+        }
+        for context in self.context_stack.iter_mut().rev() {
+            let mut var = context.borrow_mut().get_var(name);
+            if var.is_some() {
+                var.unwrap().borrow_mut().readonly = true;
+                return;
+            }
+        }
+        self.get_context().borrow_mut().get_var(name).unwrap().borrow_mut().readonly = true;
     }
 
     /// Adds a variable to a particular context on the stack.
@@ -221,6 +329,35 @@ impl ContextManager {
         }
         vars
     }
+    pub fn all_readonly_vars(&self) -> BTreeMap<String, Rc<RefCell<Var>>> {
+        let mut vars = BTreeMap::new();
+        for context in &self.context_stack {
+            for (name, var) in &context.borrow().vars {
+                if var.borrow().readonly {
+                    vars.insert(name.clone(), var.clone());
+                }
+            }
+        }
+        for (_,context) in &self.exported_contexts {
+            for (name, var) in &context.borrow().vars {
+                if var.borrow().readonly {
+                    vars.insert(name.clone(), var.clone());
+                }
+            }
+        }
+        vars
+    }
+    pub fn all_readonly_vars_context(&self, context: &str) -> BTreeMap<String, Rc<RefCell<Var>>> {
+        let mut vars = BTreeMap::new();
+        if let Some(context) = self.get_context_by_name(context) {
+            for (name, var) in &context.borrow().vars {
+                if var.borrow().readonly {
+                    vars.insert(name.clone(), var.clone());
+                }
+            }
+        }
+        vars
+    }
 
     /// Converts the environment variables into a HashMap of variables.
     fn convert_env() -> HashMap<String, Rc<RefCell<Var>>> {
@@ -229,6 +366,17 @@ impl ContextManager {
             vars.insert(key.clone(), Rc::new(RefCell::new(Var::new(&key, &value))));
         }
         vars
+    }
+
+    pub fn all_readonly_functions(&self) -> HashSet<String> {
+        let mut funcs = HashSet::new();
+        for context in &self.context_stack {
+            &context.borrow().readonly_functions.iter().for_each(|x| {funcs.insert(x.clone());});
+        }
+        for (_,context) in &self.exported_contexts {
+            &context.borrow().readonly_functions.iter().for_each(|x| {funcs.insert(x.clone());});
+        }
+        funcs
     }
     
 }
@@ -272,6 +420,7 @@ impl Default for ContextManager {
 
 pub trait ContextUtils<V> {
     fn add_var(&mut self, var: V);
+    fn add_var_readonly(&mut self, var: V);
 }
 
 /// A struct that represents a context.
@@ -283,6 +432,7 @@ pub struct Context {
     pub vars: HashMap<String, Rc<RefCell<Var>>>,
     /// Stores the functions of the context.
     functions: HashMap<String, Rc<RefCell<FunctionBody>>>,
+    pub readonly_functions: HashSet<String>,
 }
 
 impl Context {
@@ -290,6 +440,7 @@ impl Context {
         Self {
             vars,
             functions: HashMap::new(),
+            readonly_functions: HashSet::new(),
         }
     }
 
@@ -297,15 +448,34 @@ impl Context {
     pub fn get_var(&self, name: &str) -> Option<Rc<RefCell<Var>>> {
         self.vars.get(name).cloned()
     }
+    /// Removes a variable from the context with a given name.
+    pub fn remove_var(&mut self, name: &str) {
+        self.vars.remove(name);
+    }
 
     /// Gets a function from the context with a given name.
     pub fn get_function(&self, name: &str) -> Option<Rc<RefCell<FunctionBody>>> {
         self.functions.get(name).cloned()
     }
+    /// Removes a function from the context with a given name.
+    pub fn remove_function(&mut self, name: &str) {
+        self.functions.remove(name);
+        self.readonly_functions.remove(name);
+    }
 
     /// Adds a function to the context with a given name.
     pub fn add_function(&mut self, name: &str, body: Rc<RefCell<FunctionBody>>) {
+        if self.readonly_functions.contains(name) {
+            eprintln!("Can't override readonly function {}", name);
+            return;
+        }
         self.functions.insert(name.to_string(), body);
+    }
+
+    pub fn make_readonly_func(&mut self, name: &str) {
+        if let Some(func) = self.functions.remove(name) {
+            self.readonly_functions.insert(name.to_string());
+        }
     }
 
     /// Internal function that removes quotes from a string.
@@ -336,6 +506,7 @@ impl Default for Context {
         Self {
             vars: HashMap::new(),
             functions: HashMap::new(),
+            readonly_functions: HashSet::new(),
         }
     }
 }
@@ -367,6 +538,31 @@ impl ContextUtils<&str> for Context {
 
         self.add_var(var_struct);
     }
+
+    fn add_var_readonly(&mut self, var: &str) {
+        let (name, value) = if var.contains("=") {
+            let mut split = var.split("=");
+            (split.next().unwrap(), split.next().unwrap())
+        } else {
+            (var, "")
+        };
+
+        let mut var_struct = Var::new(name, &Self::trim(value));
+    
+        let key = if var.chars().nth(0).unwrap().to_digit(10).is_some() {
+            var.chars().filter(|c| {
+                (*c == '0') | (*c == '1') | (*c == '2') | (*c == '3') | (*c == '4') | (*c == '5') | (*c == '6') | (*c == '7') | (*c == '8') | (*c == '9')
+            }).collect::<String>().parse::<usize>().unwrap().to_string()
+        }
+        else {
+            name.to_string()
+        };
+
+        var_struct.readonly = true;
+        
+        self.add_var(var_struct);
+    }
+
 }
 
 impl ContextUtils<(&str, &str)> for Context {
@@ -389,6 +585,25 @@ impl ContextUtils<(&str, &str)> for Context {
 
         self.add_var(var_struct);
     }
+
+
+    fn add_var_readonly(&mut self, (name, value): (&str, &str)) {
+        let mut var_struct = Var::new(name, &Self::trim(value));
+
+        let key = if name.chars().nth(0).unwrap().to_digit(10).is_some() {
+            name.chars().filter(|c| {
+                (*c == '0') | (*c == '1') | (*c == '2') | (*c == '3') | (*c == '4') | (*c == '5') | (*c == '6') | (*c == '7') | (*c == '8') | (*c == '9')
+            }).collect::<String>().parse::<usize>().unwrap().to_string()
+        }
+        else {
+            name.to_string()
+        };
+
+        var_struct.readonly = true;
+
+        self.add_var(var_struct);
+    }
+
 }
 
 impl ContextUtils<Var> for Context {
@@ -396,6 +611,11 @@ impl ContextUtils<Var> for Context {
     /// # Arguments
     /// * `var` - The Var struct to be added to the context.
     fn add_var(&mut self, var: Var) {
+        self.vars.insert(var.name.to_string(), Rc::new(RefCell::new(var)));
+    }
+
+    fn add_var_readonly(&mut self, mut var: Var) {
+        var.readonly = true;
         self.vars.insert(var.name.to_string(), Rc::new(RefCell::new(var)));
     }
 }

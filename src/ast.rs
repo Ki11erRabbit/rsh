@@ -580,6 +580,9 @@ impl SimpleCommand {
     }
 
     pub fn eval(&mut self) {
+        if self.name.as_str() == "" {
+            return;
+        }
         if self.name.starts_with('\'') {
             Self::cut_quotes(&mut self.name);
         }

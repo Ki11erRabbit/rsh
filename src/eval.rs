@@ -437,7 +437,10 @@ fn check_if_builtin(cmd_name: &str) -> bool {
         "alias" | "unalias" => true,
         "export" => true,
         "return" => true,
-	"eval" => true,
+	    "eval" => true,
+        "unset" => true,
+        "pwd" => true,
+        "readonly" => true,
         "" => true,
         _ => false
     }
@@ -497,10 +500,22 @@ fn eval_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCom
             builtins::return_cmd(command).unwrap();
             Ok(None)
         },
-	"eval" => {
-	    builtins::eval_cmd(command).unwrap();
-	    Ok(None)
-	},
+	    "eval" => {
+	        builtins::eval_cmd(command).unwrap();
+	        Ok(None)
+	    },
+        "unset" => {
+            builtins::unset(command).unwrap();
+            Ok(None)
+        },
+        "pwd" => {
+            builtins::pwd().unwrap();
+            Ok(None)
+        },
+        "readonly" => {
+            builtins::readonly(command).unwrap();
+            Ok(None)
+        },
         "" => {
             builtins::assignment(command).unwrap();
             Ok(None)

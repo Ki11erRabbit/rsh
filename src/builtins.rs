@@ -269,7 +269,7 @@ fn create_context_from_file(file: &str) -> Result<Rc<RefCell<Context>>, std::io:
 /// .        If the right side is a file, it will evaluate the as a new context and export it.
 /// .        If the right side is 'self', it will export the current context to the environment using the namespace defined by the left side.
 pub fn export(command: &SimpleCommand) -> Result<(), std::io::Error> {
-    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word[0].contains("-p") {
+    if (command.suffix.is_none() || command.suffix.as_ref().unwrap().word.len() == 0) || command.suffix.as_ref().unwrap().word[0].contains("-p") {
         env::vars().for_each(|(key, value)| {
             println!("{}={}", key, value);
         });
@@ -393,4 +393,147 @@ pub fn eval_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
 
     
     Ok(())
+}
+
+/// This is the 'pwd' command of the shell.
+/// It prints out the current working directory.
+pub fn pwd() -> Result<(), std::io::Error> {
+    let path = env::current_dir().unwrap();
+    println!("{}", path.display());
+    Ok(())
+}
+
+enum Flags {
+    Variable,
+    Function,
+    Context,
+}
+
+pub fn unset(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() {
+	return Err(std::io::Error::new(std::io::ErrorKind::Other, "unset needs an argument"));
+    }
+
+    let mut flags = Flags::Variable;
+    let mut pos = 0;
+    if command.suffix.as_ref().unwrap().word[0].as_str().contains('-') {
+	if command.suffix.as_ref().unwrap().word[0].as_str().contains('f') {
+	    flags = Flags::Function;
+	    pos = 1;
+	}
+	else if command.suffix.as_ref().unwrap().word[0].as_str().contains('c') {
+	    flags = Flags::Context;
+	    pos = 1;
+	}
+	else if command.suffix.as_ref().unwrap().word[0].as_str().contains('v') {
+	    flags = Flags::Variable;
+	    pos = 1;
+	}
+	else {
+	    return Err(std::io::Error::new(std::io::ErrorKind::Other, "unset: invalid option"));
+	}
+    }
+
+    match flags {
+        Flags::Variable => {
+            shell::remove_var(command.suffix.as_ref().unwrap().word[pos].as_str());
+        },
+        Flags::Function => {
+            shell::remove_function(command.suffix.as_ref().unwrap().word[pos].as_str());
+        },
+        Flags::Context => {
+            shell::remove_context(command.suffix.as_ref().unwrap().word[pos].as_str());
+        },
+    }
+
+
+    Ok(())
+
+}
+
+pub fn readonly(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.len() == 0 {
+    return Err(std::io::Error::new(std::io::ErrorKind::Other, "readonly needs an argument"));
+    }
+
+    let mut flags = Flags::Variable;
+    let mut pos = 0;
+    let mut print = false;
+    if command.suffix.as_ref().unwrap().word[0].as_str().contains('-') {
+        if command.suffix.as_ref().unwrap().word[0].as_str().contains('f') {
+            flags = Flags::Function;
+            pos = 1;
+        }
+        else if command.suffix.as_ref().unwrap().word[0].as_str().contains('c') {
+            flags = Flags::Context;
+            pos = 1;
+        }
+        else if command.suffix.as_ref().unwrap().word[0].as_str().contains('v') {
+            flags = Flags::Variable;
+            pos = 1;
+        }
+        else if command.suffix.as_ref().unwrap().word[0].as_str().contains('p') {
+            print = true;
+            pos = 1;
+        }
+        else {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "readonly: invalid option"));
+        }
+    }
+    if command.suffix.as_ref().unwrap().word[pos].as_str().contains('-') {
+        if command.suffix.as_ref().unwrap().word[pos].as_str().contains('p') {
+            print = true;
+            pos += 1;
+        }
+        else {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, "readonly: invalid option"));
+        }
+    }
+
+
+    if print {
+        match &flags {
+            Flags::Variable | Flags::Context => {
+                match flags {
+                    Flags::Variable => {
+                        shell::print_readonly_vars();
+                    },
+                    Flags::Context => {
+                        if command.suffix.as_ref().unwrap().word.len() == pos {
+                            return Err(std::io::Error::new(std::io::ErrorKind::Other, "readonly needs an argument"));
+                        }
+                        shell::print_readonly_vars_context(command.suffix.as_ref().unwrap().word[pos].as_str());
+                    },
+                    _ => {},
+                }
+                shell::print_readonly_vars();
+            },
+            Flags::Function => {
+                shell::print_readonly_functions();
+            },
+        }
+        return Ok(());
+    }
+
+    match flags {
+        Flags::Function => {
+            shell::print_readonly_functions();
+            return Ok(());
+        },
+        _ => {},
+    }
+
+    if command.suffix.as_ref().unwrap().word.len() == pos {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "readonly needs an argument"));
+    }
+    if command.suffix.as_ref().unwrap().word[pos].as_str().contains('=') {
+        shell::add_readonly_var(command.suffix.as_ref().unwrap().word[pos].as_str());
+        return Ok(());
+    }
+    
+    shell::set_readonly_var(command.suffix.as_ref().unwrap().word[pos].as_str());
+
+
+    Ok(())
+
 }
