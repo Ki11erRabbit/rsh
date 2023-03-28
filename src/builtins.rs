@@ -410,7 +410,7 @@ enum Flags {
 }
 
 pub fn unset(command: &SimpleCommand) -> Result<(), std::io::Error> {
-    if command.suffix.is_none() {
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.len() == 0 {
 	return Err(std::io::Error::new(std::io::ErrorKind::Other, "unset needs an argument"));
     }
 

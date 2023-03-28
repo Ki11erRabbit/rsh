@@ -42,7 +42,7 @@ pub fn get_exit_code() -> i32 {
 /// This is where we start evaluating an AST
 /// We extract the list out of the CompleteCommand then parse the list in
 /// the function parse_tree
-pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
+pub fn eval(ast: &mut CompleteCommand) -> Result<i32,String> {
 
     let list = match &mut ast.list {
         Some(list) => list,
@@ -57,7 +57,7 @@ pub fn eval(ast: &mut CompleteCommand) -> Result<i32,&'static str> {
 /// This is where we evaluate a CompletCommand's list which is a Vec<AndOr>
 /// We iterate through the list and evaluate each AndOr in the list
 /// We return the status of the last AndOr in the list
-fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
+fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,String> {
     let mut status = -1;
 
     for and_or in list.iter_mut() {
@@ -73,7 +73,7 @@ fn parse_tree(list: &mut Vec<AndOr>) -> Result<i32,&'static str> {
 /// we evaluate the conditional AndOr and check the status and evaluate the correct branch
 /// After we evaluate the conditonal AndOr (if it exists) and the correct branch
 /// we evaluate the pipeline and return the status of the pipeline.
-fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
+fn eval_and_or(and_or: &mut AndOr) -> Result<i32,String> {
 
     if and_or.and_or.is_none() {
         return eval_pipeline(&mut and_or.pipeline);
@@ -92,7 +92,7 @@ fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
                 }
             },
             None => {
-                return Err("Error: Conditional Execution requires an operator");
+                return Err("Error: Conditional Execution requires an operator".to_string());
             }
         }
     }
@@ -111,7 +111,7 @@ fn eval_and_or(and_or: &mut AndOr) -> Result<i32,&'static str> {
 /// If the function is in the background we just add it to the pipeline and let the fork and exec loop
 /// handle it.
 /// Interupts are blocked during the fork and exec part to prevent being interupted by a signal.
-fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
+fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,String> {
 
     let background = pipeline.background;
     let mut pipeline: &mut PipeSequence = &mut pipeline.pipe_sequence;
@@ -190,7 +190,7 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
             if count < proc_count - 1 {
                 let pipe_result = pipe();
                 if pipe_result.is_err() {
-                    return Err("Failed to create pipe");
+                    return Err("Failed to create pipe".to_string());
                 }
                 pip = pipe_result.unwrap();
             }
@@ -303,7 +303,7 @@ fn eval_pipeline(pipeline: &mut Pipeline) -> Result<i32,&'static str> {
 /// This command evaluates a Command and returns a None if the command is a function definition or a shell builtin.
 /// if the command is not one of the above two then it returns a tuple with a Process and the SimpleCommand that
 /// made the Process.
-fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>,String> {
 
     match command {
         Command::SimpleCommand(simple_command) => {
@@ -313,7 +313,7 @@ fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>
             return eval_function_definition(function_definition);
         },
         _ => {
-            return Err("Not implemented");
+            return Err("Not implemented".to_string());
         }
         
     }
@@ -321,7 +321,7 @@ fn eval_command(command: &mut Command) -> Result<Option<(Process,SimpleCommand)>
 }
 
 /// This function evaluates a function definition and adds it to the current context's function table.
-fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Result<Option<(Process,SimpleCommand)>,String> {
     let name = &function_definition.name;
     let body = function_definition.function_body.clone();
     shell::add_function(&name, body);
@@ -330,7 +330,7 @@ fn eval_function_definition(function_definition: &mut FunctionDefinition) -> Res
 
 /// This function evaluates a simple command and returns a tuple with a Process and the SimpleCommand that
 /// made the Process.
-fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,&'static str> {
+fn eval_simple_command(simple_command: &mut SimpleCommand) -> Result<Option<(Process, SimpleCommand)>,String> {
    
     if check_if_builtin(&simple_command.name) {
         return eval_builtin(simple_command);
@@ -447,7 +447,7 @@ fn check_if_builtin(cmd_name: &str) -> bool {
 }
 
 /// This function evaluates a shell builtin. We should handle the error properly here.
-fn eval_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,&'static str> {
+fn eval_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,String> {
 
     /*command.remove_whitespace();
     log!("eval_simple_command: {:?}", command);
@@ -466,62 +466,76 @@ fn eval_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCom
     command.alias_lookup();
     command.expand_vars();
     command.eval();
+
+
+    let result = call_builtin(command);
+
+    if result.is_err() {
+        return Err(format!("{}", result.err().unwrap()));
+    }
+    else {
+        return Ok(None)
+    }
     
+}
+
+fn call_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCommand)>,std::io::Error> {
+
     match command.name.as_str() {
         "cd" => {
-            builtins::change_directory(command).unwrap();//TODO: properly handle error
+            builtins::change_directory(command)?;//TODO: properly handle error
             Ok(None)
         },
         "exit" => {
-            builtins::quit(command).unwrap();
+            builtins::quit(command)?;
             Ok(None)
         },
         "jobs" => {
-            builtins::jobs().unwrap();
+            builtins::jobs()?;
             Ok(None)
         },
         "fg" | "bg"=> {
-            builtins::fgbg(command).unwrap();
+            builtins::fgbg(command)?;
             Ok(None)
         },
         "alias" => {
-            builtins::alias(command).unwrap();
+            builtins::alias(command)?;
             Ok(None)
         },
         "unalias" => {
-            builtins::unalias(command).unwrap();
+            builtins::unalias(command)?;
             Ok(None)
         },
         "export" => {
-            builtins::export(command).unwrap();
+            builtins::export(command)?;
             Ok(None)
         },
         "return" => {
-            builtins::return_cmd(command).unwrap();
+            builtins::return_cmd(command)?;
             Ok(None)
         },
 	    "eval" => {
-	        builtins::eval_cmd(command).unwrap();
+	        builtins::eval_cmd(command)?;
 	        Ok(None)
 	    },
         "unset" => {
-            builtins::unset(command).unwrap();
+            builtins::unset(command)?;
             Ok(None)
         },
         "pwd" => {
-            builtins::pwd().unwrap();
+            builtins::pwd()?;
             Ok(None)
         },
         "readonly" => {
-            builtins::readonly(command).unwrap();
+            builtins::readonly(command)?;
             Ok(None)
         },
         "" => {
-            builtins::assignment(command).unwrap();
+            builtins::assignment(command)?;
             Ok(None)
         }
         _ => {
-            Err("Not implemented") 
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "Not a builtin"))
         }
     }
 }

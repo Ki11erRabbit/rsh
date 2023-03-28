@@ -227,7 +227,14 @@ fn interactive_loop() {
        
         //eprintln!("{:?}", ast);
 
-        let _result = eval::eval(&mut ast);
+        let result = eval::eval(&mut ast);
+
+        match result {
+            Ok(_) => {},
+            Err(err) => {
+                println!("{}", err);
+            }
+        }
 
         //let ast = parser::parse_input(&input).unwrap();
 
