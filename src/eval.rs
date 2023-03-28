@@ -432,15 +432,17 @@ fn check_if_builtin(cmd_name: &str) -> bool {
     match cmd_name {
         "cd" => true,
         "exit" => true,
+        "return" => true,
         "jobs" => true,
         "fg" | "bg" => true,
         "alias" | "unalias" => true,
         "export" => true,
-        "return" => true,
 	    "eval" => true,
         "unset" => true,
         "pwd" => true,
         "readonly" => true,
+        "exec" => true,
+        "." | "source" => true,
         "" => true,
         _ => false
     }
@@ -490,6 +492,10 @@ fn call_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCom
             builtins::quit(command)?;
             Ok(None)
         },
+        "return" => {
+            builtins::return_cmd(command)?;
+            Ok(None)
+        },
         "jobs" => {
             builtins::jobs()?;
             Ok(None)
@@ -510,10 +516,6 @@ fn call_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCom
             builtins::export(command)?;
             Ok(None)
         },
-        "return" => {
-            builtins::return_cmd(command)?;
-            Ok(None)
-        },
 	    "eval" => {
 	        builtins::eval_cmd(command)?;
 	        Ok(None)
@@ -528,6 +530,14 @@ fn call_builtin(command: &mut SimpleCommand) -> Result<Option<(Process,SimpleCom
         },
         "readonly" => {
             builtins::readonly(command)?;
+            Ok(None)
+        },
+        "exec" => {
+            builtins::exec_cmd(command)?;
+            Ok(None)
+        },
+        "." | "source" => {
+            builtins::source(command)?;
             Ok(None)
         },
         "" => {
@@ -638,5 +648,33 @@ fn temp_exec(process: &mut Process) -> Result<i32,String> {
 }
 
 
+pub fn temp_execve(process: &mut Process,env: &[CString]) -> Result<i32,String> {
+
+    //set env
+    //
+    //set assignments
+  
+    jobs::fork_reset();
+
+    let argv0 = match shell::lookup_command(&process.argv0) {
+        Some(cmd) => cmd,
+        None => {
+            return Err(format!("{}: Command not found", process.argv0));
+        }
+    };
+
+    let command = CString::new(argv0).unwrap();
+
+
+    match nix::unistd::execve(&command, &process.argv, &env) {
+        Ok(_) => {
+            unreachable!();
+        },
+        Err(e) => {
+            return Err(format!("Failed to execute: {}", e));
+        }
+    }
+
+}
 
 

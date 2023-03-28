@@ -9,12 +9,14 @@ use crate::shell;
 use nix::unistd::Pid;
 use nix::sys::signal::kill;
 use nix::sys::signal::Signal;
+use std::ffi::CString;
 use crate::jobs;
 use crate::trap;
 use crate::eval;
 use crate::log;
 use crate::context::ContextUtils;
 use crate::context::Context;
+use crate::jobs::Process;
 
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -66,13 +68,30 @@ pub fn change_directory(command: &SimpleCommand) -> Result<(), std::io::Error> {
 pub fn quit(command: &SimpleCommand) -> Result<(), std::io::Error> {
     shell::save_history();
     if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.is_empty() {
-        exit(0);
+        let exit_code = eval::get_exit_code();
+        exit(exit_code);
     }
     //let chars = command.suffix.as_ref().unwrap().word[0].chars();
     //chars.next();
     let code = command.suffix.as_ref().unwrap().word[0].parse::<i32>().unwrap();
 
     exit(code);
+}
+
+/// This is the 'return' command of the shell.
+/// It returns from a function.
+/// By default, it returns the last command's exit status.
+/// It takes a SimpleCommand with a suffix that is a string of the form 'number'.
+pub fn return_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.is_empty() {
+        return Ok(());
+    }
+    //let chars = command.suffix.as_ref().unwrap().word[0].chars();
+    //chars.next();
+    let code = command.suffix.as_ref().unwrap().word[0].parse::<i32>().unwrap();
+
+    eval::set_exit_status(code);
+    Ok(())
 }
 
 /// This is the 'jobs' command of the shell.
@@ -349,27 +368,13 @@ pub fn assignment(command: &SimpleCommand) -> Result<(), std::io::Error> {
     Ok(())
 }
 
-/// This is the 'return' command of the shell.
-/// It returns from a function.
-/// By default, it returns 0.
-/// It takes a SimpleCommand with a suffix that is a string of the form 'number'.
-pub fn return_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
-    if command.suffix.is_none() {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "return needs an argument"));
-    }
-    let mut chars = command.suffix.as_ref().unwrap().word[0].chars();
-    chars.next();
-    let code = chars.as_str().parse::<i32>().unwrap();
-
-    exit(code);
-}
 
 /// This is the 'eval' command of the shell.
 /// It evaluates a string as a command.
 /// It takes a SimpleCommand with a suffix that is a string of the form 'string'.
 pub fn eval_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
     if command.suffix.is_none() {
-	return Err(std::io::Error::new(std::io::ErrorKind::Other, "eval needs an argument"));
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "eval needs an argument"));
     }
 
 
@@ -377,18 +382,18 @@ pub fn eval_cmd(command: &SimpleCommand) -> Result<(), std::io::Error> {
     
     let mut lexer = Lexer::new(string.as_str());
     let mut ast = match grammar::CompleteCommandParser::new().parse(string.as_str(),lexer) {
-	Ok(ast) => ast,
-	Err(e) => {
-		return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error parsing file: {}", e)));
-	}
+        Ok(ast) => ast,
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error parsing file: {}", e)));
+        }
     };
 
     log!("AST: {:?}", ast);
     match eval::eval(&mut ast) {
-	Ok(_) => {},
-	Err(e) => {
-	    return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error evaluating string: {}", e)));
-	}
+        Ok(_) => {},
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error evaluating string: {}", e)));
+        }
     }
 
     
@@ -536,4 +541,170 @@ pub fn readonly(command: &SimpleCommand) -> Result<(), std::io::Error> {
 
     Ok(())
 
+}
+
+pub fn exec_cmd(command: &SimpleCommand) -> Result<(),std::io::Error> {
+
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.len() < 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "exec needs an argument"));
+    }
+    
+    let suffix = command.suffix.as_ref().unwrap();
+
+    let mut empty_env = false;
+    let mut dash = false;
+    let mut rename = false;
+    let mut pos = 0;
+    
+    if suffix.word[0].contains('-') {
+        if suffix.word[0].contains('c') {
+            empty_env = true;
+            pos = 1;
+        }
+        if suffix.word[0].contains('l') {
+            dash = true;
+            pos = 1;
+        }
+        if suffix.word[0].contains('a') {
+            rename = true;
+            pos = 2;
+            if suffix.word.len() <= pos {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "exec -a needs an argument"));
+            }
+        }
+    }
+    if suffix.word[pos].contains('-') {
+        if suffix.word[pos].contains('c') {
+            empty_env = true;
+            pos += 1;
+        }
+        if suffix.word[pos].contains('l') {
+            dash = true;
+            pos += 1;
+        }
+        if suffix.word[pos].contains('a') {
+            rename = true;
+            pos += 2;
+            if suffix.word.len() <= pos {
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, "exec -a needs an argument"));
+            }
+        }
+    }
+
+    log!("empty_env: {}, dash: {}, rename: {}, pos: {}", empty_env, dash, rename, pos);
+
+    let mut args = Vec::new();
+    let mut cmd = String::new();
+    for i in pos..suffix.word.len() {
+        log!("i: {}, pos: {}", i, pos);
+        log!("word: {}", suffix.word[i]);
+        if i == pos && dash && rename {
+            let temp = "-".to_string() + suffix.word[pos - 1].as_str();
+            args.push(CString::new(temp.as_str()).unwrap());
+            cmd += suffix.word[pos - 1].as_str();
+            cmd += " ";
+            continue;
+        }
+        else if i == pos && dash {
+            let temp = "-".to_string() + suffix.word[i].as_str();
+            args.push(CString::new(temp.as_str()).unwrap());
+            cmd += suffix.word[i].as_str();
+            cmd += " ";
+            continue;
+        }
+        else if rename && i == pos {
+            cmd += suffix.word[pos - 1].as_str();
+            args.push(CString::new(suffix.word[pos - 1].as_str()).unwrap());
+            cmd += " ";
+            continue;
+        }
+        args.push(CString::new(suffix.word[i].as_str()).unwrap());
+        cmd += suffix.word[i].as_str();
+        cmd += " ";
+    }
+    log!("args: {:?}", args);
+    
+
+    let mut process = Process::new(args, suffix.word[pos].clone(),cmd);
+
+    let env = if empty_env {
+        Vec::new()
+    }
+    else {
+        env::vars().map(|(k, v)| CString::new(k + "=" + &v).unwrap()).collect()
+    };
+
+    
+    let result = eval::temp_execve(&mut process, &env);
+
+    if result.is_err() {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{}", result.unwrap_err())));
+    }
+
+    
+    Ok(())
+}
+
+pub fn source(command: &SimpleCommand) -> Result<(),std::io::Error> {
+
+    if command.suffix.is_none() || command.suffix.as_ref().unwrap().word.len() < 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "source needs an argument"));
+    }
+
+    let suffix = command.suffix.as_ref().unwrap();
+
+    let filename = suffix.word[0].clone();
+
+    let args = if suffix.word.len() > 1 {
+        let mut args = Vec::new();
+        for i in 1..suffix.word.len() {
+            args.push(suffix.word[i].clone());
+        }
+        args
+    }
+    else {
+        Vec::new()
+    };
+
+    for (pos, arg) in args.iter().enumerate() {
+        shell::add_var_context(&format!("{}={}", pos + 1, arg));
+    }
+
+    // Open the file directly if it has a slash
+    let mut file = if filename.contains('/') {
+        File::open(&filename)
+    }// Open the file if it is in in the PATH
+    else if shell::lookup_command(filename.as_str()).is_some() {
+        File::open(shell::lookup_command(filename.as_str()).unwrap())
+    }// Open the file in place
+    else {
+        File::open(&filename)
+    };
+
+    if file.is_err() {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("{} {}: No such file or directory",command.name ,filename)));
+    }
+    let mut file = file.unwrap();
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).unwrap();
+
+    let mut lexer = Lexer::new(contents.as_str());
+    let mut ast = match grammar::CompleteCommandParser::new().parse(contents.as_str(),lexer) {
+        Ok(ast) => ast,
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error parsing file: {}", e)));
+        }
+    };
+
+    log!("AST: {:?}", ast);
+    match eval::eval(&mut ast) {
+        Ok(_) => {},
+        Err(e) => {
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("Error evaluating string: {}", e)));
+        }
+    }
+    
+
+    Ok(())
 }

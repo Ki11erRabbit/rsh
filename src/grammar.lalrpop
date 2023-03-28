@@ -43,9 +43,6 @@ extern {
         "done"          => lexer::Token::Done,
         "case"          => lexer::Token::Case,
         "esac"          => lexer::Token::Esac,
-        "break"         => lexer::Token::Break,
-        "continue"      => lexer::Token::Continue,
-        "return"        => lexer::Token::Return,
         "EOF"           => lexer::Token::EOF,
         "Subshell"      => lexer::Token::Subshell(<&'input str>),
         "Word"          => lexer::Token::Word(<&'input str>),
@@ -54,6 +51,7 @@ extern {
 }
 
 pub CompleteCommand: ast::CompleteCommand = {
+    <sep:Separator> <lst:List> => ast::CompleteCommand{list: Some(lst)},
     <lst:List> <sep:Separator> => ast::CompleteCommand{list: Some(lst)},
     <lst:List> => ast::CompleteCommand{list: Some(lst)},
     <sep:Separator> => ast::CompleteCommand{list: None},
@@ -205,6 +203,7 @@ Word: String = {
 
 CmdSepOp: String = {
     <sep:";"> => ";".to_string(),
+    <nl:"newline_list"> => "\n".to_string(),
 }
 CmdBackgroundOp: String = {
     <sep:"&"> => "&".to_string(),
@@ -212,9 +211,13 @@ CmdBackgroundOp: String = {
 
 Separator: String = {
     <sep:";"> => ";".to_string(),
+    <sep:";"> <nl:"newline_list"> <nl2:"newline_list"> => ";\n".to_string(),
+    <sep:";"> <nl:"newline_list"> <nl2:"newline_list"> <eof:"EOF"> => ";\n".to_string(),
     <nl:"newline_list"> => "\n".to_string(),
     <eof:"EOF"> => "".to_string(),
     <nl:"newline_list"> <eof:"EOF"> => "\n".to_string(),
+    <nl:"newline_list"> <nl2:"newline_list"> => "\n".to_string(),
+    <nl:"newline_list"> <nl2:"newline_list"> <eof:"EOF"> => "\n".to_string(),
     <sep:";"> <eof:"EOF"> => ";".to_string(),
 }
 

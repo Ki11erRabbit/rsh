@@ -60,9 +60,9 @@ pub enum Token<'input> {
     Done,
     Case,
     Esac,
-    Break,
+/*    Break,
     Continue,
-    Return,
+    Return,*/
     EOF,
     Subshell(&'input str),
     Number(RawFd),
@@ -109,9 +109,9 @@ impl Display for Token<'_> {
             Token::Done => write!(f, "Done"),
             Token::Case => write!(f, "Case"),
             Token::Esac => write!(f, "Esac"),
-            Token::Break => write!(f, "Break"),
+            /*Token::Break => write!(f, "Break"),
             Token::Continue => write!(f, "Continue"),
-            Token::Return => write!(f, "Return"),
+            Token::Return => write!(f, "Return"),*/
             Token::EOF => write!(f, "EOF"),
             Token::Subshell(s) => write!(f, "Subshell({})", s),
             Token::Number(n) => write!(f, "Number({})", n),
@@ -149,6 +149,7 @@ impl<'input> Iterator for Lexer<'input> {
     fn next(&mut self) -> Option<Self::Item> {
 
         while let Some((start, chr, end)) = self.advance() {
+            //eprintln!("{}: {}", start, chr);
             let token = match chr {
                 '\n' => Some(self.newline_list(start, end)),
                 ';' => Some(Ok((start, Token::SemiColon, end))),
@@ -292,7 +293,7 @@ impl<'input> Lexer<'input> {
         -> (&'input str, usize)
         where F: FnMut(char) -> bool
     {
-        eprintln!("{:?}",self.input);
+        //eprintln!("{:?}",self.input);
         let mut count = 0;
         while let Some((_, c, _)) = self.lookahead {
             if count == 2 {
@@ -346,6 +347,7 @@ impl<'input> Lexer<'input> {
 
     fn newline_list(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
         while let Some((_, chr, _)) = self.lookahead {
+            //eprintln!("chr: {}", chr);
             match chr {
                 '\n' => self.advance(),
                 _ => break,
@@ -357,6 +359,7 @@ impl<'input> Lexer<'input> {
     fn word(&mut self, start: usize, end: usize) -> Result<(usize, Token<'input>, usize), Error> {
 
         let (word, end) = self.take_while(start, end, is_word_continue);
+        //eprintln!("word: {}", word);
         let token = match word {
             "for" => Token::For,
             "in" => Token::In,
@@ -370,12 +373,9 @@ impl<'input> Lexer<'input> {
             "done" => Token::Done,
             "case" => Token::Case,
             "esac" => Token::Esac,
-            "break" => Token::Break,
-            "continue" => Token::Continue,
-            "return" => Token::Return,
             word => self.num_or_word(word),
         };
-
+        
         Ok((start, token, end))
         
     }
@@ -395,10 +395,13 @@ impl<'input> Lexer<'input> {
 
 
 fn is_word_start(chr: char) -> bool {
-    match chr {
+    //eprintln!("chr is_word_start: {}", chr);
+    let result = match chr {
         'a'..='z' | 'A'..='Z' | '_' | '0'..='9' | '"' | '\''  => true,
         _ => is_word_continue(chr),
-    }
+    };
+    //eprintln!("result is_word_start: {}", result);
+    result
 }
 
 fn is_word_continue(chr: char) -> bool {
